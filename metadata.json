@@ -1,0 +1,6 @@
+{
+  "name": "Athleta AI - Motor de Prescrição de Treino & Workout Engine",
+  "description": "Sistema de prescrição inteligente de treino baseado em evidências científicas, metodologia Full Body, biomecânica e Clean Architecture.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

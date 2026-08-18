@@ -1,0 +1,22 @@
+{
+  "short_name": "Athleta AI",
+  "name": "Athleta AI - Sistema Científico de Musculação & Dieta",
+  "icons": [
+    {
+      "src": "https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=192&auto=format&fit=crop&q=80",
+      "type": "image/jpeg",
+      "sizes": "192x192"
+    },
+    {
+      "src": "https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=512&auto=format&fit=crop&q=80",
+      "type": "image/jpeg",
+      "sizes": "512x512"
+    }
+  ],
+  "start_url": "/",
+  "background_color": "#020617",
+  "theme_color": "#020617",
+  "display": "standalone",
+  "orientation": "portrait",
+  "description": "Sistema Científico de Musculação, controle de volume, RIR, fadiga muscular e nutrição de baixo custo."
+}
