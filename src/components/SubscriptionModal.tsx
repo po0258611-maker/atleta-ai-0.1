@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { 
   X, 
   Check, 
@@ -9,15 +9,19 @@ import {
   CheckCircle2, 
   Sparkles, 
   Clock, 
-  Zap, 
   Lock,
-  RefreshCw
+  RefreshCw,
+  Loader2,
+  ExternalLink,
+  AlertCircle
 } from 'lucide-react';
 import { SubscriptionState, PaymentMethodType } from '../types';
 import { 
-  generatePixDetails, 
-  processCreditCardPayment, 
-  confirmPixPayment 
+  createPixOrder, 
+  createCardCheckoutSession,
+  checkPaymentStatus,
+  getSubscriptionState,
+  PaymentIntentResponse 
 } from '../services/subscriptionService';
 
 interface SubscriptionModalProps {
@@ -39,337 +43,378 @@ export const SubscriptionModal: React.FC<SubscriptionModalProps> = ({
 }) => {
   const [selectedMethod, setSelectedMethod] = useState<PaymentMethodType>('pix');
   const [isProcessing, setIsProcessing] = useState(false);
+  const [isCheckingStatus, setIsCheckingStatus] = useState(false);
   const [copiedPix, setCopiedPix] = useState(false);
   const [successMsg, setSuccessMsg] = useState<string | null>(null);
+  const [errorMsg, setErrorMsg] = useState<string | null>(null);
 
-  // Credit Card Form state
-  const [cardNumber, setCardNumber] = useState('');
+  // Active Server Payment Intent
+  const [pixIntent, setPixIntent] = useState<PaymentIntentResponse | null>(null);
+  const [cardIntent, setCardIntent] = useState<PaymentIntentResponse | null>(null);
+
+  // Credit Card state
   const [cardName, setCardName] = useState(userName);
+  const [cardNumber, setCardNumber] = useState('');
   const [expiry, setExpiry] = useState('');
   const [cvv, setCvv] = useState('');
-  const [cardError, setCardError] = useState<string | null>(null);
 
-  // Generated PIX data
-  const [pixData] = useState(() => generatePixDetails(userEmail, userName));
+  // Auto-generate PIX order from backend when PIX is selected
+  useEffect(() => {
+    if (isOpen && selectedMethod === 'pix' && !pixIntent) {
+      setIsProcessing(true);
+      createPixOrder('PRO')
+        .then((intent) => {
+          setPixIntent(intent);
+          setIsProcessing(false);
+        })
+        .catch((err) => {
+          setErrorMsg(err.message || 'Erro ao gerar ordem PIX no servidor.');
+          setIsProcessing(false);
+        });
+    }
+  }, [isOpen, selectedMethod, pixIntent]);
 
   if (!isOpen) return null;
 
   const handleCopyPix = () => {
-    navigator.clipboard.writeText(pixData.copiaECola);
-    setCopiedPix(true);
-    setTimeout(() => setCopiedPix(false), 3000);
-  };
-
-  const handleConfirmPix = async () => {
-    setIsProcessing(true);
-    try {
-      const updated = await confirmPixPayment();
-      onSubscriptionUpdate(updated);
-      setSuccessMsg('Pagamento PIX confirmado com sucesso! Seu plano PRO está ativo.');
-      setTimeout(() => {
-        setSuccessMsg(null);
-        onClose();
-      }, 1500);
-    } catch {
-      setIsProcessing(false);
+    if (pixIntent?.copiaECola) {
+      navigator.clipboard.writeText(pixIntent.copiaECola);
+      setCopiedPix(true);
+      setTimeout(() => setCopiedPix(false), 3000);
     }
   };
 
-  const handleCardSubmit = async (e: React.FormEvent) => {
+  const handleVerifyPixPayment = async () => {
+    if (!pixIntent) return;
+    setIsCheckingStatus(true);
+    setErrorMsg(null);
+
+    try {
+      const res = await checkPaymentStatus(pixIntent.transactionId, 'pix_direct');
+      if (res.status === 'approved') {
+        const freshSub = await getSubscriptionState();
+        onSubscriptionUpdate(freshSub);
+        setSuccessMsg('Pagamento PIX liquidado e confirmado pelo servidor!');
+        setTimeout(() => {
+          setSuccessMsg(null);
+          onClose();
+        }, 1500);
+      } else {
+        setErrorMsg('Aguardando liquidação bancária pelo webhook do Banco Central. Conclua a transferência no seu app bancário.');
+      }
+    } catch (err: any) {
+      setErrorMsg(err.message || 'Erro ao consultar status no servidor.');
+    } finally {
+      setIsCheckingStatus(false);
+    }
+  };
+
+  const handleInitiateCardCheckout = async (e: React.FormEvent) => {
     e.preventDefault();
-    setCardError(null);
-
-    const cleanCard = cardNumber.replace(/\s+/g, '');
-    if (cleanCard.length < 13) {
-      setCardError('Por favor, digite um número de cartão válido.');
-      return;
-    }
-    if (!expiry || !cvv) {
-      setCardError('Por favor, preencha a data de validade e o código CVV.');
-      return;
-    }
-
     setIsProcessing(true);
+    setErrorMsg(null);
+
     try {
-      const updated = await processCreditCardPayment({
-        cardNumber,
-        cardName,
-        expiry,
-        cvv,
-      });
-      onSubscriptionUpdate(updated);
-      setSuccessMsg('Cartão aprovado! Assinatura ativada com sucesso.');
-      setTimeout(() => {
-        setSuccessMsg(null);
-        onClose();
-      }, 1500);
-    } catch {
-      setCardError('Falha ao processar pagamento. Verifique os dados do cartão.');
+      const intent = await createCardCheckoutSession('PRO');
+      setCardIntent(intent);
+      if (intent.checkoutUrl) {
+        // Safe redirect to PCI-compliant gateway checkout
+        window.open(intent.checkoutUrl, '_blank');
+      }
+      setSuccessMsg('Sessão de pagamento segura gerada com o gateway.');
+    } catch (err: any) {
+      setErrorMsg(err.message || 'Falha ao iniciar checkout seguro.');
+    } finally {
       setIsProcessing(false);
     }
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/85 backdrop-blur-md animate-fadeIn overflow-y-auto">
-      <div className="relative w-full max-w-2xl bg-[#0f0f12] border border-zinc-800 rounded-3xl p-6 sm:p-8 shadow-2xl space-y-6 my-8">
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/85 backdrop-blur-md animate-fadeIn">
+      <div className="relative w-full max-w-xl bg-[#0f0f12] border border-zinc-800 rounded-3xl p-6 sm:p-8 shadow-2xl space-y-6 max-h-[92vh] overflow-y-auto">
         {/* Close Button */}
         <button
           onClick={onClose}
           className="absolute top-5 right-5 p-2 text-zinc-400 hover:text-white bg-zinc-900 hover:bg-zinc-800 rounded-xl transition-all cursor-pointer"
         >
-          <X className="h-5 w-5" />
+          <X className="h-4 w-4" />
         </button>
 
-        {/* Header Badge & Title */}
-        <div className="text-center space-y-2">
-          <div className="inline-flex items-center space-x-2 px-3 py-1 bg-rose-500/15 border border-rose-500/30 rounded-full text-rose-400 text-xs font-bold uppercase tracking-wider">
+        {/* Header */}
+        <div className="space-y-2">
+          <div className="inline-flex items-center space-x-2 bg-rose-500/15 border border-rose-500/30 text-rose-400 px-3 py-1 rounded-full text-xs font-bold font-mono">
             <Sparkles className="h-3.5 w-3.5" />
-            <span>Assinatura Individual PRO</span>
+            <span>GATEWAY SERVER-AUTHORITATIVE ATIVO</span>
           </div>
-          <h2 className="text-2xl sm:text-3xl font-black text-white tracking-tight">
-            Plano PRO Athleta AI
+          <h2 className="text-2xl font-black text-white tracking-tight">
+            Assinatura Athleta AI PRO & APEX
           </h2>
-          <p className="text-xs sm:text-sm text-zinc-300 max-w-md mx-auto font-medium">
-            Acesso ilimitado ao Motor Científico Full-Body, Nutrição Flexível com IA e Histórico de Cargas.
+          <p className="text-xs text-zinc-400">
+            Acesso ilimitado ao AI Coach KINETIX, BioAtlas 3D e prescrições Full Body avançadas.
           </p>
         </div>
 
-        {/* Price Card */}
-        <div className="bg-gradient-to-r from-rose-950/40 via-[#0f0f12] to-zinc-950 border border-rose-500/30 rounded-2xl p-5 flex flex-col sm:flex-row items-center justify-between gap-4">
+        {/* Plan Value Banner */}
+        <div className="bg-gradient-to-r from-rose-950/40 via-zinc-900 to-zinc-900 border border-rose-900/40 rounded-2xl p-4 flex items-center justify-between">
           <div>
-            <div className="flex items-baseline space-x-1">
-              <span className="text-xs text-zinc-400 font-bold uppercase">Apenas</span>
-              <span className="text-3xl sm:text-4xl font-black text-rose-500">R$ 15,00</span>
-              <span className="text-xs text-zinc-400 font-medium">/ mês por pessoa</span>
+            <div className="text-xs font-bold text-rose-400 uppercase tracking-wider">
+              Plano Mensal PRO
             </div>
-            <p className="text-[11px] text-zinc-300 mt-1 flex items-center gap-1.5 font-medium">
-              <ShieldCheck className="h-3.5 w-3.5 text-rose-400 shrink-0" />
-              <span>Sem taxa de adesão • Cancele quando quiser sem fidelidade</span>
-            </p>
+            <div className="text-2xl font-black text-white flex items-baseline space-x-1">
+              <span>R$ 15,00</span>
+              <span className="text-xs font-normal text-zinc-400">/ mês</span>
+            </div>
+            <div className="text-[11px] text-zinc-400 mt-0.5">
+              Sem fidelidade ou carência. Cancele quando quiser.
+            </div>
           </div>
-
-          <div className="bg-rose-600 text-white px-4 py-2 rounded-xl text-xs font-black uppercase tracking-wider shadow-lg shadow-rose-600/30 shrink-0">
-            Mais Vendido
-          </div>
-        </div>
-
-        {/* Features List */}
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5 text-xs text-zinc-200">
-          <div className="flex items-center space-x-2 bg-zinc-950 p-2.5 rounded-xl border border-zinc-800">
-            <Check className="h-4 w-4 text-rose-400 shrink-0" />
-            <span>Prescrição IA Ilimitada (Fullbody 2x a 5x)</span>
-          </div>
-          <div className="flex items-center space-x-2 bg-zinc-950 p-2.5 rounded-xl border border-zinc-800">
-            <Check className="h-4 w-4 text-rose-400 shrink-0" />
-            <span>Motor Biomecânico & Guia PT-BR com Áudio</span>
-          </div>
-          <div className="flex items-center space-x-2 bg-zinc-950 p-2.5 rounded-xl border border-zinc-800">
-            <Check className="h-4 w-4 text-rose-400 shrink-0" />
-            <span>Dieta Flexível & Plano Macronutricional</span>
-          </div>
-          <div className="flex items-center space-x-2 bg-zinc-950 p-2.5 rounded-xl border border-zinc-800">
-            <Check className="h-4 w-4 text-rose-400 shrink-0" />
-            <span>Exportação de PDF & Registrador de Cargas</span>
+          <div className="text-right">
+            <span className="px-2.5 py-1 bg-rose-600/20 text-rose-400 border border-rose-600/30 rounded-lg text-[10px] font-bold">
+              Gateway 100% Criptografado
+            </span>
           </div>
         </div>
 
-        {/* Success Alert */}
+        {/* Alerts */}
+        {errorMsg && (
+          <div className="p-3 bg-amber-500/10 border border-amber-500/20 rounded-xl text-xs text-amber-300 flex items-start space-x-2">
+            <AlertCircle className="h-4 w-4 shrink-0 mt-0.5" />
+            <span>{errorMsg}</span>
+          </div>
+        )}
+
         {successMsg && (
-          <div className="p-4 bg-emerald-500/10 border border-emerald-500/30 rounded-2xl flex items-center space-x-3 text-emerald-300 text-xs font-bold animate-fadeIn">
-            <CheckCircle2 className="h-5 w-5 text-emerald-400 shrink-0" />
+          <div className="p-3 bg-emerald-500/10 border border-emerald-500/20 rounded-xl text-xs text-emerald-400 flex items-center space-x-2">
+            <CheckCircle2 className="h-4 w-4 shrink-0" />
             <span>{successMsg}</span>
           </div>
         )}
 
         {/* Payment Methods Tabs */}
-        <div className="space-y-4">
-          <div className="text-xs font-bold uppercase tracking-wider text-zinc-400 flex items-center space-x-1.5">
-            <CreditCard className="h-4 w-4 text-rose-400" />
-            <span>Escolha a forma de pagamento:</span>
-          </div>
+        <div className="grid grid-cols-2 gap-2 p-1 bg-zinc-950 rounded-2xl border border-zinc-800">
+          <button
+            type="button"
+            onClick={() => setSelectedMethod('pix')}
+            className={`py-2.5 px-4 rounded-xl text-xs font-bold flex items-center justify-center space-x-2 transition-all cursor-pointer ${
+              selectedMethod === 'pix'
+                ? 'bg-rose-600 text-white shadow-md'
+                : 'text-zinc-400 hover:text-zinc-200'
+            }`}
+          >
+            <QrCode className="h-4 w-4" />
+            <span>PIX Instantâneo</span>
+          </button>
+          <button
+            type="button"
+            onClick={() => setSelectedMethod('credit_card')}
+            className={`py-2.5 px-4 rounded-xl text-xs font-bold flex items-center justify-center space-x-2 transition-all cursor-pointer ${
+              selectedMethod === 'credit_card'
+                ? 'bg-rose-600 text-white shadow-md'
+                : 'text-zinc-400 hover:text-zinc-200'
+            }`}
+          >
+            <CreditCard className="h-4 w-4" />
+            <span>Cartão de Crédito</span>
+          </button>
+        </div>
 
-          <div className="grid grid-cols-2 gap-3">
-            <button
-              type="button"
-              onClick={() => setSelectedMethod('pix')}
-              className={`p-3.5 rounded-2xl border flex items-center justify-center space-x-2 text-xs font-bold transition-all cursor-pointer ${
-                selectedMethod === 'pix'
-                  ? 'bg-rose-500/20 text-rose-300 border-rose-500 shadow-lg shadow-rose-600/15'
-                  : 'bg-zinc-900 text-zinc-400 border-zinc-800 hover:text-white hover:border-zinc-700'
-              }`}
-            >
-              <QrCode className="h-4 w-4" />
-              <span>PIX (Instantâneo)</span>
-            </button>
-
-            <button
-              type="button"
-              onClick={() => setSelectedMethod('credit_card')}
-              className={`p-3.5 rounded-2xl border flex items-center justify-center space-x-2 text-xs font-bold transition-all cursor-pointer ${
-                selectedMethod === 'credit_card'
-                  ? 'bg-rose-500/20 text-rose-300 border-rose-500 shadow-lg shadow-rose-600/15'
-                  : 'bg-zinc-900 text-zinc-400 border-zinc-800 hover:text-white hover:border-zinc-700'
-              }`}
-            >
-              <CreditCard className="h-4 w-4" />
-              <span>Cartão de Crédito</span>
-            </button>
-          </div>
-
-          {/* PIX Method Details */}
-          {selectedMethod === 'pix' && (
-            <div className="bg-zinc-950 border border-zinc-800 rounded-2xl p-5 space-y-4 text-center animate-fadeIn">
-              <div className="flex flex-col items-center space-y-2">
-                <div className="p-3 bg-white rounded-2xl shadow-xl inline-block">
-                  <img
-                    src={pixData.qrCodeUrl}
-                    alt="QR Code PIX Athleta AI"
-                    className="w-40 h-40 object-contain"
-                  />
-                </div>
-                <div className="text-[11px] text-zinc-400 flex items-center gap-1 font-medium">
-                  <Clock className="h-3.5 w-3.5 text-amber-400" />
-                  <span>Chave expira em 15 minutos</span>
-                </div>
+        {/* Method 1: PIX Real Payment */}
+        {selectedMethod === 'pix' && (
+          <div className="space-y-4 animate-fadeIn">
+            {isProcessing ? (
+              <div className="py-12 flex flex-col items-center justify-center space-y-3">
+                <Loader2 className="h-8 w-8 animate-spin text-rose-500" />
+                <span className="text-xs text-zinc-400">Gerando QR Code PIX com o Banco Central...</span>
               </div>
+            ) : pixIntent ? (
+              <div className="space-y-4">
+                <div className="flex flex-col sm:flex-row items-center justify-center gap-6 p-5 bg-zinc-950 rounded-2xl border border-zinc-800">
+                  {pixIntent.qrCodeUrl && (
+                    <div className="p-2 bg-white rounded-2xl shadow-lg shrink-0">
+                      <img
+                        src={pixIntent.qrCodeUrl}
+                        alt="QR Code PIX"
+                        className="w-36 h-36 object-contain"
+                      />
+                    </div>
+                  )}
+                  <div className="space-y-2 text-center sm:text-left">
+                    <div className="text-xs font-bold text-white">Como pagar com PIX:</div>
+                    <ol className="text-[11px] text-zinc-400 space-y-1 list-decimal list-inside">
+                      <li>Abra o aplicativo do seu banco</li>
+                      <li>Escolha pagar via <strong>PIX Copia e Cola / QR Code</strong></li>
+                      <li>Escaneie a imagem ou cole o código abaixo</li>
+                      <li>A liberação é automática via Webhook</li>
+                    </ol>
+                    <div className="text-[10px] text-amber-400 font-mono flex items-center space-x-1 pt-1 justify-center sm:justify-start">
+                      <Clock className="h-3 w-3" />
+                      <span>Expira em 15 minutos (TxID: {pixIntent.transactionId})</span>
+                    </div>
+                  </div>
+                </div>
 
-              {/* Copia e Cola Code */}
-              <div className="space-y-1.5 text-left">
-                <label className="text-[11px] font-bold text-zinc-300">Código PIX Copia e Cola:</label>
-                <div className="flex items-center space-x-2">
-                  <input
-                    type="text"
-                    readOnly
-                    value={pixData.copiaECola}
-                    className="w-full px-3 py-2 bg-zinc-900 border border-zinc-800 rounded-xl text-[11px] font-mono text-zinc-300 focus:outline-none"
-                  />
+                {pixIntent.copiaECola && (
+                  <div className="space-y-1.5">
+                    <div className="text-[11px] font-bold text-zinc-400">PIX Copia e Cola</div>
+                    <div className="flex items-center space-x-2">
+                      <input
+                        type="text"
+                        readOnly
+                        value={pixIntent.copiaECola}
+                        className="flex-1 px-3 py-2 bg-zinc-950 border border-zinc-800 rounded-xl text-xs text-zinc-300 font-mono truncate focus:outline-none"
+                      />
+                      <button
+                        type="button"
+                        onClick={handleCopyPix}
+                        className="px-4 py-2 bg-zinc-900 hover:bg-zinc-800 border border-zinc-800 text-white rounded-xl text-xs font-bold flex items-center space-x-1.5 transition-all cursor-pointer"
+                      >
+                        {copiedPix ? (
+                          <>
+                            <Check className="h-3.5 w-3.5 text-emerald-400" />
+                            <span className="text-emerald-400">Copiado!</span>
+                          </>
+                        ) : (
+                          <>
+                            <Copy className="h-3.5 w-3.5" />
+                            <span>Copiar</span>
+                          </>
+                        )}
+                      </button>
+                    </div>
+                  </div>
+                )}
+
+                <div className="pt-2 flex flex-col sm:flex-row gap-2">
                   <button
                     type="button"
-                    onClick={handleCopyPix}
-                    className="px-3.5 py-2 bg-rose-600 hover:bg-rose-500 text-white font-bold text-xs rounded-xl flex items-center space-x-1.5 transition-all cursor-pointer shrink-0"
+                    onClick={handleVerifyPixPayment}
+                    disabled={isCheckingStatus}
+                    className="flex-1 py-3 bg-rose-600 hover:bg-rose-500 text-white text-xs font-bold rounded-xl shadow-lg shadow-rose-600/20 transition-all flex items-center justify-center space-x-2 cursor-pointer disabled:opacity-50"
                   >
-                    {copiedPix ? (
+                    {isCheckingStatus ? (
                       <>
-                        <Check className="h-3.5 w-3.5" />
-                        <span>Copiado!</span>
+                        <RefreshCw className="h-4 w-4 animate-spin" />
+                        <span>Verificando com o Servidor...</span>
                       </>
                     ) : (
                       <>
-                        <Copy className="h-3.5 w-3.5" />
-                        <span>Copiar</span>
+                        <ShieldCheck className="h-4 w-4" />
+                        <span>Verificar Confirmação do Pagamento</span>
                       </>
                     )}
                   </button>
                 </div>
               </div>
+            ) : null}
+          </div>
+        )}
 
-              {/* Confirm Button */}
-              <button
-                type="button"
-                disabled={isProcessing}
-                onClick={handleConfirmPix}
-                className="w-full py-3 bg-rose-600 hover:bg-rose-500 text-white font-black text-xs sm:text-sm rounded-xl shadow-xl shadow-rose-600/25 flex items-center justify-center space-x-2 transition-all cursor-pointer disabled:opacity-50"
-              >
-                {isProcessing ? (
-                  <>
-                    <RefreshCw className="h-4 w-4 animate-spin" />
-                    <span>Confirmando Pagamento...</span>
-                  </>
-                ) : (
-                  <>
-                    <Zap className="h-4 w-4 fill-white" />
-                    <span>CONFIRMAR PAGAMENTO PIX (R$ 15,00)</span>
-                  </>
-                )}
-              </button>
+        {/* Method 2: Credit Card PCI Gateway */}
+        {selectedMethod === 'credit_card' && (
+          <form onSubmit={handleInitiateCardCheckout} className="space-y-4 animate-fadeIn">
+            <div className="p-4 bg-zinc-950 border border-zinc-800 rounded-2xl space-y-3">
+              <div className="flex items-center space-x-2 text-zinc-300 text-xs font-bold">
+                <Lock className="h-4 w-4 text-emerald-400" />
+                <span>Checkout Criptografado de Ponta a Ponta</span>
+              </div>
+              <p className="text-[11px] text-zinc-400 leading-relaxed">
+                Em conformidade com a norma <strong>PCI-DSS</strong>, dados sensíveis de cartão de crédito não trafegam nem são armazenados na aplicação. O processamento é realizado diretamente pela infraestrutura bancária do gateway.
+              </p>
             </div>
-          )}
 
-          {/* Credit Card Form */}
-          {selectedMethod === 'credit_card' && (
-            <form onSubmit={handleCardSubmit} className="bg-zinc-950 border border-zinc-800 rounded-2xl p-5 space-y-3 animate-fadeIn">
-              {cardError && (
-                <div className="p-3 bg-rose-500/10 border border-rose-500/30 rounded-xl text-rose-300 text-xs">
-                  {cardError}
-                </div>
-              )}
-
+            <div className="grid grid-cols-1 gap-3">
               <div>
-                <label className="text-[11px] font-bold text-zinc-300 mb-1 block">Número do Cartão:</label>
+                <label className="block text-[11px] font-bold text-zinc-400 mb-1">
+                  Titular do Cartão
+                </label>
                 <input
                   type="text"
                   required
-                  placeholder="0000 0000 0000 0000"
-                  value={cardNumber}
-                  onChange={(e) => setCardNumber(e.target.value)}
-                  className="w-full px-3.5 py-2.5 bg-zinc-900 border border-zinc-800 rounded-xl text-xs text-white placeholder-zinc-500 focus:outline-none focus:border-rose-500"
+                  value={cardName}
+                  onChange={(e) => setCardName(e.target.value)}
+                  placeholder="Nome impresso no cartão"
+                  className="w-full px-3 py-2 bg-zinc-950 border border-zinc-800 rounded-xl text-xs text-white focus:outline-none focus:border-rose-500"
                 />
               </div>
 
               <div>
-                <label className="text-[11px] font-bold text-zinc-300 mb-1 block">Nome do Titular:</label>
+                <label className="block text-[11px] font-bold text-zinc-400 mb-1">
+                  Número do Cartão
+                </label>
                 <input
                   type="text"
                   required
-                  placeholder="Nome impresso no cartão"
-                  value={cardName}
-                  onChange={(e) => setCardName(e.target.value)}
-                  className="w-full px-3.5 py-2.5 bg-zinc-900 border border-zinc-800 rounded-xl text-xs text-white placeholder-zinc-500 focus:outline-none focus:border-rose-500"
+                  maxLength={19}
+                  value={cardNumber}
+                  onChange={(e) => setCardNumber(e.target.value)}
+                  placeholder="0000 0000 0000 0000"
+                  className="w-full px-3 py-2 bg-zinc-950 border border-zinc-800 rounded-xl text-xs text-white font-mono focus:outline-none focus:border-rose-500"
                 />
               </div>
 
               <div className="grid grid-cols-2 gap-3">
                 <div>
-                  <label className="text-[11px] font-bold text-zinc-300 mb-1 block">Validade (MM/AA):</label>
+                  <label className="block text-[11px] font-bold text-zinc-400 mb-1">
+                    Validade (MM/AA)
+                  </label>
                   <input
                     type="text"
                     required
-                    placeholder="12/28"
+                    maxLength={5}
                     value={expiry}
                     onChange={(e) => setExpiry(e.target.value)}
-                    className="w-full px-3.5 py-2.5 bg-zinc-900 border border-zinc-800 rounded-xl text-xs text-white placeholder-zinc-500 focus:outline-none focus:border-rose-500"
+                    placeholder="12/28"
+                    className="w-full px-3 py-2 bg-zinc-950 border border-zinc-800 rounded-xl text-xs text-white font-mono focus:outline-none focus:border-rose-500"
                   />
                 </div>
 
                 <div>
-                  <label className="text-[11px] font-bold text-zinc-300 mb-1 block">CVV:</label>
+                  <label className="block text-[11px] font-bold text-zinc-400 mb-1">
+                    CVV
+                  </label>
                   <input
-                    type="text"
+                    type="password"
                     required
                     maxLength={4}
-                    placeholder="123"
                     value={cvv}
                     onChange={(e) => setCvv(e.target.value)}
-                    className="w-full px-3.5 py-2.5 bg-zinc-900 border border-zinc-800 rounded-xl text-xs text-white placeholder-zinc-500 focus:outline-none focus:border-rose-500"
+                    placeholder="123"
+                    className="w-full px-3 py-2 bg-zinc-950 border border-zinc-800 rounded-xl text-xs text-white font-mono focus:outline-none focus:border-rose-500"
                   />
                 </div>
               </div>
+            </div>
 
-              <button
-                type="submit"
-                disabled={isProcessing}
-                className="w-full mt-2 py-3 bg-rose-600 hover:bg-rose-500 text-white font-black text-xs sm:text-sm rounded-xl shadow-xl shadow-rose-600/25 flex items-center justify-center space-x-2 transition-all cursor-pointer disabled:opacity-50"
-              >
-                {isProcessing ? (
-                  <>
-                    <RefreshCw className="h-4 w-4 animate-spin" />
-                    <span>Processando Pagamento...</span>
-                  </>
-                ) : (
-                  <>
-                    <Lock className="h-4 w-4" />
-                    <span>ASSINAR AGORA POR R$ 15,00 / MÊS</span>
-                  </>
-                )}
-              </button>
-            </form>
-          )}
-        </div>
+            <button
+              type="submit"
+              disabled={isProcessing}
+              className="w-full py-3 bg-rose-600 hover:bg-rose-500 text-white text-xs font-bold rounded-xl shadow-lg shadow-rose-600/20 transition-all flex items-center justify-center space-x-2 cursor-pointer disabled:opacity-50"
+            >
+              {isProcessing ? (
+                <>
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                  <span>Conectando com o Gateway...</span>
+                </>
+              ) : (
+                <>
+                  <CreditCard className="h-4 w-4" />
+                  <span>Concluir Pagamento com Segurança</span>
+                </>
+              )}
+            </button>
+          </form>
+        )}
 
-        {/* Security Footer */}
-        <div className="text-center text-[11px] text-zinc-400 flex items-center justify-center space-x-2 pt-2 border-t border-zinc-800 font-medium">
-          <ShieldCheck className="h-4 w-4 text-rose-400" />
-          <span>Pagamento seguro de 256 bits com confirmação imediata</span>
+        {/* Footer Guarantee */}
+        <div className="pt-2 flex items-center justify-center space-x-4 text-[10px] text-zinc-500">
+          <div className="flex items-center space-x-1">
+            <Lock className="h-3 w-3 text-emerald-500" />
+            <span>SSL 256-bit</span>
+          </div>
+          <div>•</div>
+          <div>Cancelamento a qualquer momento</div>
+          <div>•</div>
+          <div>Suporte 24/7</div>
         </div>
       </div>
     </div>

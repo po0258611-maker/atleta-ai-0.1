@@ -1,3 +1,5 @@
+import { FirestoreDataService } from './firestoreDataService';
+
 export interface BodyMeasurementRecord {
   id: string;
   userId: string;
@@ -15,9 +17,25 @@ export interface BodyMeasurementRecord {
 const STORAGE_KEY = 'athleta_ai_body_measurements';
 
 export class BodyMeasurementsService {
-  static getRecords(userId: string): BodyMeasurementRecord[] {
+  /**
+   * Retrieves measurements from Firestore first with fallback to localStorage
+   */
+  static async getRecords(userId: string): Promise<BodyMeasurementRecord[]> {
+    if (!userId) return [];
+    
+    // 1. Fetch from Firestore
     try {
-      const data = localStorage.getItem(`${STORAGE_KEY}_${userId}`);
+      const firestoreRecords = await FirestoreDataService.getMeasurements(userId);
+      if (firestoreRecords && firestoreRecords.length > 0) {
+        return firestoreRecords;
+      }
+    } catch (e) {
+      console.warn('Erro ao consultar medições do Firestore:', e);
+    }
+
+    // 2. Fallback to localStorage
+    try {
+      const data = localStorage.getItem(`${STORAGE_KEY}_${userId}`) || localStorage.getItem(STORAGE_KEY);
       if (!data) return [];
       const records: BodyMeasurementRecord[] = JSON.parse(data);
       return records.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
@@ -26,25 +44,33 @@ export class BodyMeasurementsService {
     }
   }
 
-  static addRecord(userId: string, record: Omit<BodyMeasurementRecord, 'id' | 'userId'>): BodyMeasurementRecord {
-    const records = this.getRecords(userId);
+  /**
+   * Saves a new measurement to Firestore and caches in localStorage
+   */
+  static async addRecord(userId: string, record: Omit<BodyMeasurementRecord, 'id' | 'userId'>): Promise<BodyMeasurementRecord> {
     const newRecord: BodyMeasurementRecord = {
       ...record,
-      id: `meas-${Date.now()}`,
+      id: `meas_${Date.now()}`,
       userId,
     };
 
-    const updated = [newRecord, ...records];
+    // Save to Firestore (isolated by UID)
+    await FirestoreDataService.saveMeasurement(userId, newRecord);
+
+    // Update local cache
     try {
-      localStorage.setItem(`${STORAGE_KEY}_${userId}`, JSON.stringify(updated));
+      const localData = localStorage.getItem(`${STORAGE_KEY}_${userId}`);
+      const existing: BodyMeasurementRecord[] = localData ? JSON.parse(localData) : [];
+      localStorage.setItem(`${STORAGE_KEY}_${userId}`, JSON.stringify([newRecord, ...existing]));
     } catch (err) {
-      console.error('Error saving body measurement:', err);
+      console.error('Erro ao atualizar cache local de medições:', err);
     }
+
     return newRecord;
   }
 
-  static getLatestRecord(userId: string): BodyMeasurementRecord | null {
-    const records = this.getRecords(userId);
+  static async getLatestRecord(userId: string): Promise<BodyMeasurementRecord | null> {
+    const records = await this.getRecords(userId);
     return records.length > 0 ? records[0] : null;
   }
 }

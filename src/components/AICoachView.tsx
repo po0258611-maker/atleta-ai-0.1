@@ -275,11 +275,11 @@ Como posso orientar seus treinos ou estratégia metabólica hoje?`,
             </div>
 
             <div className="bg-zinc-950 p-3.5 rounded-2xl border border-zinc-800 space-y-1">
-              <span className="text-zinc-500 font-semibold block text-[11px]">Marcos de 1RM Projetados:</span>
+              <span className="text-zinc-500 font-semibold block text-[11px]">Diretriz de Progressão:</span>
               <div className="text-xs font-bold text-cyan-300 space-y-0.5 mt-1">
-                <div>• Agachamento: {intelligentGoals.milestone1RMSquat} kg</div>
-                <div>• Supino: {intelligentGoals.milestone1RMBench} kg</div>
-                <div>• Terra: {intelligentGoals.milestone1RMDeadlift} kg</div>
+                <div>• Sobrecarga: Double & Rep Progression</div>
+                <div>• Autorregulação: Baseada em RIR/RPE</div>
+                <div>• 1RM: Calculado sob demanda com dados reais</div>
               </div>
             </div>
           </div>

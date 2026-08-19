@@ -1,0 +1,60 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    
+    // Helper function to check if the user is authenticated
+    function isAuthenticated() {
+      return request.auth != null;
+    }
+
+    // Helper function to verify that the request belongs to the authenticated user UID
+    function isOwner(userId) {
+      return isAuthenticated() && request.auth.uid == userId;
+    }
+
+    // Isolated user root document
+    match /users/{userId} {
+      allow read, write: if isOwner(userId);
+
+      // users/{uid}/profile
+      match /profile/{docId} {
+        allow read, write: if isOwner(userId);
+      }
+
+      // users/{uid}/workouts
+      match /workouts/{docId} {
+        allow read, write: if isOwner(userId);
+      }
+
+      // users/{uid}/sessions
+      match /sessions/{docId} {
+        allow read, write: if isOwner(userId);
+      }
+
+      // users/{uid}/exerciseLogs
+      match /exerciseLogs/{docId} {
+        allow read, write: if isOwner(userId);
+      }
+
+      // users/{uid}/progression
+      match /progression/{docId} {
+        allow read, write: if isOwner(userId);
+      }
+
+      // users/{uid}/settings
+      match /settings/{docId} {
+        allow read, write: if isOwner(userId);
+      }
+
+      // users/{uid}/subscription
+      match /subscription/{docId} {
+        allow read, write: if isOwner(userId);
+      }
+
+      // users/{uid}/measurements
+      match /measurements/{docId} {
+        allow read, write: if isOwner(userId);
+      }
+    }
+  }
+}

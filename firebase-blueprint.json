@@ -1,0 +1,123 @@
+{
+  "entities": {
+    "users": {
+      "title": "users",
+      "description": "Athlete root document",
+      "type": "object",
+      "properties": {
+        "displayName": { "type": "string" },
+        "updatedAt": { "type": "string" }
+      }
+    },
+    "profile": {
+      "title": "profile",
+      "description": "Athlete biometric and training profile",
+      "type": "object",
+      "properties": {
+        "name": { "type": "string" },
+        "gender": { "type": "string" },
+        "age": { "type": "number" },
+        "heightCm": { "type": "number" },
+        "weightKg": { "type": "number" },
+        "objective": { "type": "string" },
+        "availableDays": { "type": "number" },
+        "updatedAt": { "type": "string" }
+      }
+    },
+    "workouts": {
+      "title": "workouts",
+      "description": "Athlete active Full Body workout plan",
+      "type": "object",
+      "properties": {
+        "methodology": { "type": "string" },
+        "splitDays": { "type": "array" },
+        "updatedAt": { "type": "string" }
+      }
+    },
+    "exerciseLogs": {
+      "title": "exerciseLogs",
+      "description": "Completed workout and set logs",
+      "type": "object",
+      "properties": {
+        "date": { "type": "string" },
+        "dayId": { "type": "string" },
+        "durationMin": { "type": "number" },
+        "sessionRPE": { "type": "number" },
+        "exerciseLogs": { "type": "array" },
+        "createdAt": { "type": "string" }
+      }
+    },
+    "progression": {
+      "title": "progression",
+      "description": "Athlete aggregated volume and streaks",
+      "type": "object",
+      "properties": {
+        "totalWorkouts": { "type": "number" },
+        "totalVolumeKg": { "type": "number" },
+        "currentStreakDays": { "type": "number" },
+        "lastWorkoutDate": { "type": "string" },
+        "updatedAt": { "type": "string" }
+      }
+    },
+    "settings": {
+      "title": "settings",
+      "description": "Athlete UI preferences",
+      "type": "object",
+      "properties": {
+        "theme": { "type": "string" },
+        "notifications": { "type": "boolean" },
+        "soundEffects": { "type": "boolean" },
+        "hapticFeedback": { "type": "boolean" },
+        "language": { "type": "string" }
+      }
+    },
+    "subscription": {
+      "title": "subscription",
+      "description": "Athlete subscription state",
+      "type": "object",
+      "properties": {
+        "isSubscribed": { "type": "boolean" },
+        "planId": { "type": "string" },
+        "planName": { "type": "string" },
+        "priceBrl": { "type": "number" },
+        "status": { "type": "string" },
+        "billingCycle": { "type": "string" },
+        "renewsAt": { "type": "string" },
+        "paymentMethod": { "type": "string" },
+        "updatedAt": { "type": "string" }
+      }
+    },
+    "measurements": {
+      "title": "measurements",
+      "description": "Athlete body composition and anthropometric records",
+      "type": "object",
+      "properties": {
+        "date": { "type": "string" },
+        "weightKg": { "type": "number" },
+        "heightCm": { "type": "number" },
+        "bodyFatPercentage": { "type": "number" },
+        "waistCm": { "type": "number" },
+        "chestCm": { "type": "number" },
+        "armCm": { "type": "number" }
+      }
+    }
+  },
+  "firestore": {
+    "structure": [
+      {
+        "collection": "users",
+        "description": "Root user records",
+        "subcollections": [
+          { "collection": "profile", "description": "Profile data" },
+          { "collection": "workouts", "description": "Workout prescriptions" },
+          { "collection": "sessions", "description": "Active device sessions" },
+          { "collection": "exerciseLogs", "description": "Completed workout logs" },
+          { "collection": "progression", "description": "Aggregated statistics" },
+          { "collection": "settings", "description": "User preferences" },
+          { "collection": "subscription", "description": "Subscription documents" },
+          { "collection": "measurements", "description": "Body measurements" }
+        ]
+      }
+    ]
+  }
+}
