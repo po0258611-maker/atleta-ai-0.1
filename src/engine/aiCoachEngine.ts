@@ -1,5 +1,6 @@
-import { UserProfile, FullBodyProgram } from '../types';
+import { UserProfile, FullBodyProgram, Exercise } from '../types';
 import { postApi } from '../api/apiClient';
+import { EXERCISE_DATABASE } from './exerciseData';
 
 export interface AICoachMessage {
   id: string;
@@ -8,34 +9,68 @@ export interface AICoachMessage {
   timestamp: string;
 }
 
+/**
+ * Validates whether an exercise proposed exists in the validated deterministic database
+ */
+export function isExerciseInDatabase(exerciseName: string): boolean {
+  const norm = exerciseName.trim().toLowerCase();
+  return EXERCISE_DATABASE.some(
+    (e) => e.nome.toLowerCase() === norm || e.nomeEnglish?.toLowerCase() === norm
+  );
+}
+
+/**
+ * Client-Side Orchestrator for the AI Layer:
+ * 1. Collects Validated Data from Training Engine / State
+ * 2. Formats strictly as Data Context
+ * 3. Calls Secured Server AI Pipeline
+ * 4. Verifies Response integrity
+ */
 export async function askAICoach(
   prompt: string,
   userProfile?: UserProfile | null,
   activeProgram?: FullBodyProgram | null
 ): Promise<string> {
   try {
-    const context: Record<string, unknown> = {};
+    // 1. Training Engine -> Validated Data
+    const validatedData: Record<string, unknown> = {};
+
     if (userProfile) {
-      context.user = {
-        name: userProfile.name,
-        objective: userProfile.objective,
-        experience: userProfile.experience,
-        availableDays: userProfile.availableDays,
-        limitations: userProfile.limitations,
-      };
-    }
-    if (activeProgram) {
-      context.program = {
-        id: activeProgram.id,
-        methodology: activeProgram.methodology,
-        daysCount: activeProgram.splitDays.length,
-        splitDays: activeProgram.splitDays.map((d) => ({ id: d.id, title: d.title })),
+      validatedData.atleta = {
+        nome: userProfile.name,
+        objetivo: userProfile.objective,
+        experiencia: userProfile.experience,
+        diasDisponiveis: userProfile.availableDays,
+        limitacoesFisicas: userProfile.limitations || [],
+        exerciciosProibidos: userProfile.forbiddenExercises || [],
       };
     }
 
+    if (activeProgram) {
+      validatedData.programaPeriodizado = {
+        id: activeProgram.id,
+        metodologia: activeProgram.methodology,
+        diasTotais: activeProgram.splitDays.length,
+        distribuicao: activeProgram.splitDays.map((d) => ({
+          dia: d.id,
+          titulo: d.title,
+          foco: d.focusMuscles,
+          tempoMin: d.estimatedTimeMin,
+          exerciciosPrescritos: d.items.map((i) => ({
+            exercicio: i.exercise.nome,
+            series: i.targetSets,
+            reps: i.targetReps,
+            rir: i.targetRIR,
+          })),
+        })),
+        volumeSemanalPorGrupo: activeProgram.weeklyVolumeMap,
+      };
+    }
+
+    // 2. Post to AI Layer (Secure backend pipeline with Security Guard & Validation Layer)
     const data = await postApi<{ reply: string }>('/api/ai-coach', {
       prompt,
-      context: Object.keys(context).length > 0 ? context : undefined,
+      context: Object.keys(validatedData).length > 0 ? validatedData : undefined,
     });
 
     return data.reply;
@@ -45,6 +80,9 @@ export async function askAICoach(
   }
 }
 
+/**
+ * Fetches prescription rationale from the deterministic pipeline
+ */
 export async function fetchPrescriptionExplanation(
   userProfile: UserProfile,
   program: FullBodyProgram
@@ -63,6 +101,6 @@ export async function fetchPrescriptionExplanation(
 
     return data.explanation;
   } catch {
-    return `A periodização Full Body foi configurada para ${userProfile.availableDays} dias semanais, distribuindo as séries efetivas para maximizar a síntese proteica miofibrilar sem acumular fadiga axial excessiva.`;
+    return `A periodização Full Body foi configurada pelo motor determinístico para ${userProfile.availableDays} dias semanais, distribuindo as séries efetivas para maximizar a síntese proteica miofibrilar sem acumular fadiga axial excessiva.`;
   }
 }

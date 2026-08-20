@@ -308,7 +308,7 @@ export default function App() {
             )}
 
             {/* Exercise 3D Library */}
-            {activeTab === 'exercises' && (
+            {(activeTab === 'exercise_library' || (activeTab as string) === 'exercises') && (
               <ExerciseLibraryView
                 userProfile={userProfile}
               />
@@ -334,10 +334,13 @@ export default function App() {
             )}
 
             {/* AI Coach KINETIX */}
-            {activeTab === 'coach' && (
+            {(activeTab === 'ai_coach' || (activeTab as string) === 'coach') && (
               <AICoachView
-                userProfile={userProfile}
-                activeProgram={program}
+                profile={userProfile}
+                program={program}
+                subscription={subscription}
+                onOpenSubscriptionModal={() => setIsSubscriptionModalOpen(true)}
+                onOpenPremiumGate={(title, desc) => setIsPremiumGateOpen(true)}
               />
             )}
 

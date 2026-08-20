@@ -1,40 +1,45 @@
-# ATHLETA AI — SECURITY & COMPLIANCE SPECIFICATION
+# ATHLETA AI — GUIA DE SEGURANÇA E ARQUITETURA DE PROTEÇÃO DE DADOS
 
-> **Security Level:** Enterprise Grade & OWASP Top 10 Compliant  
-> **Target Standard:** HIPAA (Health Data Privacy) & GDPR / LGPD Readiness  
-> **Version:** 2.0.0
-
----
-
-## 1. Core Security Architectural Controls
-
-### 1.1 Secret Management & API Protection
-- **Rule 1**: Zero secret exposure in client bundles. `GEMINI_API_KEY` is restricted strictly to the Node.js server (`server.ts`).
-- **Rule 2**: Public environment variables are restricted strictly to non-sensitive configuration keys in `.env.example`.
-- **Rule 3**: Cross-Origin Resource Sharing (CORS) is explicitly configured on Express endpoints to restrict origin access.
-
-### 1.2 Authentication & Authorization Guardrails
-- **JWT Token Verification**: All requests to protected `/api/*` endpoints require a valid Firebase Auth Bearer Token in the `Authorization` header.
-- **Role-Based Access Control (RBAC)**:
-  - `core_free`: Access to standard Fullbody Matrix & BioAtlas 3D.
-  - `apex_pass`: Full access to KINETIX AI™ endpoint, export engines, and advanced NeuroFatigue analytics.
-
-### 1.3 Data Input Sanitization & Prompt Injection Protection
-- Inputs sent to `POST /api/ai-coach` are sanitized to prevent prompt injection and system prompt override attempts.
-- System instructions enforce strict domain boundaries: KINETIX AI™ responds exclusively to fitness, biomechanics, exercise science, and nutrition topics.
+> **Documento:** Guia de Diretrizes Técnicas de Segurança  
+> **Status:** Código-Alinhado (Auditado)  
+> **Versão:** 2.1.0  
+> **Nota de Conformidade:** Este documento descreve estritamente os controles técnicos e salvaguardas computacionais implementados no código-fonte. Não constitui certificação jurídica ou auditoria externa formal de conformidade (como HIPAA, GDPR, LGPD ou ISO/IEC).
 
 ---
 
-## 2. OWASP Top 10 Risk Mitigation Matrix
+## 1. Matriz de Status dos Controles de Segurança
 
-| Vulnerability | Athleta AI Mitigation Control | Status |
+| Controle / Funcionalidade | Classificação | Detalhes Técnicos da Implementação |
 | :--- | :--- | :--- |
-| **A01: Broken Access Control** | Firestore security rules enforce strict `request.auth.uid == userId` checks. | Implemented / Hardened |
-| **A02: Cryptographic Failures** | HTTPS forced across Cloud Run / Nginx reverse proxy. SSL TLS 1.3. | Implemented |
-| **A03: Injection (SQL / Prompt)** | Parameterized API payloads + System Prompt Boundaries on Gemini API calls. | Implemented |
-| **A04: Insecure Design** | Server-side proxy architecture isolates third-party keys from browser DOM. | Implemented |
-| **A05: Security Misconfiguration** | Disabled HMR in dev runtime; production environment uses esbuild CJS bundle. | Implemented |
+| **Isolamento de Segredos (API Keys)** | `IMPLEMENTADO` | `GEMINI_API_KEY` e segredos de backend operam exclusivamente no servidor Node.js (`server.ts` e `/server/services/*`). Nenhuma chave de IA é exposta ao bundle do cliente. |
+| **Proteção contra Injeção de Prompt (AI Guard)** | `IMPLEMENTADO` | `aiSecurityGuard.ts` e `aiService.ts` implementam sanitização de tokens de prompt, bloqueio de palavras-chave de override de sistema e limites estritos de caracteres. |
+| **Prevenção de Vazamento de Segredos em Respostas IA** | `IMPLEMENTADO` | Filtro de regex intercepta e mascara chaves de API (`AIza...`, `sk-...`, etc.) nas respostas geradas antes do envio ao cliente. |
+| **Autenticação com JWT / Firebase Auth** | `IMPLEMENTADO` | `authGuard.ts` intercepta requisições a rotas protegidas (`/api/*`), validando tokens Bearer via Firebase Admin SDK ou token de sessão local. |
+| **Autorização RBAC e Entitlements Server-Side** | `IMPLEMENTADO` | `entitlementService.ts` avalia planos (`FREE` vs `PRO/PREMIUM`) e cotas de uso mensais no backend, retornando 403 Forbidden quando limites são atingidos. |
+| **Idempotência de Webhooks de Pagamento** | `IMPLEMENTADO` | `paymentWebhookService.ts` e `paymentProvider.ts` registram IDs de eventos processados com cache de expiração para rejeitar transações duplicadas. |
+| **Headers HTTP de Segurança (CORS & Proteção Básica)** | `IMPLEMENTADO` | Express configurado com `X-Content-Type-Options: nosniff`, `X-Frame-Options: SAMEORIGIN` e `X-XSS-Protection: 1; mode=block`. |
+| **Regras de Segurança Firestore (Isolamento por UID)** | `IMPLEMENTADO` | `firestore.rules` restringe leitura e escrita exclusivamente ao proprietário do documento autenticado (`request.auth.uid == userId`). |
+| **Criptografia de Senhas Locais (Fallback Auth)** | `IMPLEMENTADO` | Senhas salvas no repositório de fallback utilizam derivação com salt e hash criptográfico (PBKDF2 / SHA-256). |
+| **Ambiente de Pagamentos em Produção (Live Gateway)** | `SIMULADO` | Adapters de Stripe e Pix possuem arquitetura completa de geração e liquidação, operando com chaves de teste/sandbox até provisionamento de credenciais bancárias ao vivo. |
+| **Auditoria e Certificação Externa Formal** | `PLANEJADO` | Auditorias formais de penetração (Pentest) e selos de conformidade de terceiros. |
 
 ---
 
-*Document created and maintained by Athleta AI Information Security & DevSecOps.*
+## 2. Salvaguardas do Motor de Inteligência Artificial (`aiSecurityGuard.ts`)
+
+1. **Camada de Entrada (Input Barrier)**:
+   - Sanitização de inputs do usuário contra técnicas de Jailbreak e Prompt Injection.
+   - Bloqueio de comandos de sistema ("ignore previous instructions", "system override", "reveal API key").
+   - Restrição temática obrigatória a ciências do exercício, biomecânica, nutrição e recuperação atlética.
+
+2. **Camada de Saída (Output Sanitizer)**:
+   - Verificação determinística contra o catálogo canônico de exercícios (`exerciseData.ts`), prevenindo invenção de movimentos biomecanicamente perigosos.
+   - Detecção e censura preventiva de padrões de tokens confidenciais e credenciais de servidor.
+
+---
+
+## 3. Diretrizes para Variáveis de Ambiente
+
+- Chaves privadas **NUNCA** devem ser prefixadas com `VITE_`.
+- Novas variáveis públicas devem ser declaradas em `.env.example` sem valores confidenciais.
+- A comunicação cliente-servidor para dados protegidos deve sempre transitar via cabeçalho `Authorization: Bearer <token>`.

@@ -12,7 +12,7 @@
 
 import { authService } from '../services/authService';
 import { entitlementService } from '../services/entitlementService';
-import { subscriptionRepository } from '../repositories/subscriptionRepository';
+import { subscriptionServerRepository } from '../repositories/subscriptionServerRepository';
 import { usageRepository } from '../repositories/usageRepository';
 
 async function runTests() {
@@ -59,16 +59,20 @@ async function runTests() {
   const premiumUserId = `usr_premium_${Date.now()}`;
   const now = new Date();
   const future = new Date(now.getTime() + 30 * 24 * 60 * 60 * 1000);
-  await subscriptionRepository.saveSubscription({
+  await subscriptionServerRepository.saveSubscription({
     id: `sub_${premiumUserId}`,
     userId: premiumUserId,
-    planId: 'PREMIUM',
-    status: 'ACTIVE',
+    planId: 'PRO',
+    status: 'active',
+    provider: 'stripe',
+    customerId: `cus_${premiumUserId}`,
+    subscriptionId: `sub_stripe_${premiumUserId}`,
     currentPeriodStart: now.toISOString(),
     currentPeriodEnd: future.toISOString(),
     cancelAtPeriodEnd: false,
     createdAt: now.toISOString(),
     updatedAt: now.toISOString(),
+    priceBrl: 39.90,
   });
 
   const evalPremium = await entitlementService.evaluateAccess(premiumUserId, 'AI_COACH_MESSAGES');
@@ -79,16 +83,20 @@ async function runTests() {
   // Test 6: Premium Expired Fallback to Free
   const expiredUserId = `usr_expired_${Date.now()}`;
   const past = new Date(now.getTime() - 5 * 24 * 60 * 60 * 1000);
-  await subscriptionRepository.saveSubscription({
+  await subscriptionServerRepository.saveSubscription({
     id: `sub_${expiredUserId}`,
     userId: expiredUserId,
-    planId: 'PREMIUM',
-    status: 'ACTIVE',
+    planId: 'PRO',
+    status: 'active',
+    provider: 'stripe',
+    customerId: `cus_${expiredUserId}`,
+    subscriptionId: `sub_stripe_${expiredUserId}`,
     currentPeriodStart: new Date(now.getTime() - 35 * 24 * 60 * 60 * 1000).toISOString(),
     currentPeriodEnd: past.toISOString(), // Expired
     cancelAtPeriodEnd: false,
     createdAt: past.toISOString(),
     updatedAt: past.toISOString(),
+    priceBrl: 39.90,
   });
 
   const evalExpired = await entitlementService.evaluateAccess(expiredUserId, 'ADVANCED_PERIODIZATION');

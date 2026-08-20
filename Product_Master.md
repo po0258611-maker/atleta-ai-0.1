@@ -1,76 +1,61 @@
-# ATHLETA AI — PRODUCT MASTER SPECIFICATION & NOMENCLATURE DOCUMENTATION
+# ATHLETA AI — ESPECIFICAÇÃO MESTRE DE PRODUTO
 
-> **Product Version:** 2.0.0  
-> **Architecture:** Full-Stack React + Vite + Express + High-Performance Biomechanical Engine  
-> **Brand Identity:** High-Performance Scientific Athletic Intelligence
-
----
-
-## 1. Product Architectural Modules
-
-The Athleta AI application is organized into 6 core high-performance operational modules:
-
-### 1.1 Command Center (`overview`)
-- **Purpose**: Real-time executive dashboard displaying athletic readiness, current split volume, weekly target progress, and quick access to KINETIX AI™ insights.
-- **Key Indicators**:
-  - *Readiness Index* (Índice de Prontidão)
-  - *Weekly Tensile Volume* (Volume Semanal)
-  - *Active Split Overview* (Resumo de Divisão de Treino)
-
-### 1.2 Fullbody Matrix (`workout_engine`)
-- **Purpose**: Dynamic multi-frequency fullbody prescription engine based on individual muscle priorities, joint limitations, and equipment availability.
-- **Key Features**:
-  - Auto-regulated set distribution (2, 3, 4, 5 days split).
-  - Substitute exercise generator with mechanical equivalence.
-  - Interactive Tensile Load Logger with rest intervals.
-
-### 1.3 NutriFlux Engine (`diet`)
-- **Purpose**: Precision metabolic energy and macronutrient engineering system (IIFYM & Flexible Nutrition).
-- **Key Features**:
-  - Mifflin-St Jeor TMB calculator with activity multiplier.
-  - Macro composition synthesis (Protein, Carbs, Fats, Fiber).
-  - Customizable meal timing and intake tracking.
-
-### 1.4 KINETIX AI™ Studio (`ai_coach`)
-- **Purpose**: Elite AI performance consultation powered by Senior Biomechanical Intelligence.
-- **Key Features**:
-  - Real-time exercise substitution guidance.
-  - Recovery & fatigue diagnosis.
-  - Structured prompt shortcuts (*Análise de Volume*, *Ajuste de Carga*, *Dores/Lesões*).
-
-### 1.5 BioAtlas 3D (`exercise_library`)
-- **Purpose**: 3D ray-traced anatomical library with high-definition muscular glow highlights.
-- **Key Features**:
-  - Agonist/Synergist muscle engagement breakdown.
-  - Common execution mistake warnings.
-  - YouTube video execution guides.
-
-### 1.6 BioProfile Studio & NeuroFatigue (`assessment` & `fatigue`)
-- **Purpose**: Biometric data management and systemic recovery monitoring.
-- **Key Features**:
-  - Multi-profile switching (Athleta Core / Custom Profiles).
-  - RPE and CNS fatigue tracking with automated Deload recommendations.
+> **Produto:** ATHLETA AI — Apex Performance Suite  
+> **Status:** Código-Alinhado (Auditado)  
+> **Versão:** 2.1.0  
 
 ---
 
-## 2. Monetization & Tier Nomenclature
+## 1. Matriz de Auditoria de Funcionalidades do Produto
 
-- **Athleta Core Pass** (Free Access):
-  - Access to Command Center, basic Fullbody Matrix generation, and BioAtlas 3D.
-- **Athleta APEX Membership** (R$ 15,00/mês or R$ 120,00/ano):
-  - Unlimited KINETIX AI™ consultations.
-  - Export PDF / Excel workout matrices.
-  - Advanced NeuroFatigue recovery diagnostics.
-  - Multi-athlete profile management.
+| Módulo / Funcionalidade | Classificação | Estado Real no Código-Fonte |
+| :--- | :--- | :--- |
+| **Command Center (`overview`)** | `IMPLEMENTADO` | Dashboard executivo com indicador de prontidão de recuperação, volume semanal acumulado, divisão de treino ativa e atalhos de navegação. |
+| **Fullbody Matrix (`workout_engine`)** | `IMPLEMENTADO` | Geração completa de treinos Fullbody adaptativos (2 a 6 dias), seleção de exercícios, cálculo de séries/reps/RIR e substituição de exercícios biomecanicamente equivalentes. |
+| **Tensile Load Logger (`workout_logger`)** | `IMPLEMENTADO` | Interface interativa de registro de treino durante a sessão, cronômetro de descanso, salvamento de cargas e repetições reais por série. |
+| **NutriFlux Engine (`diet`)** | `IMPLEMENTADO` | Cálculo metabólico (TMB e GET via Mifflin-St Jeor), ajuste de superávit/déficit calórico e divisão de macronutrientes (Proteínas, Carboidratos, Gorduras, Fibras) por refeições. |
+| **KINETIX AI™ Coach (`ai_coach`)** | `IMPLEMENTADO` | Chat analítico com assistente de IA conectado ao Google Gemini no backend, com sanitização de segurança contra prompt injection, censura de chaves e controle de cotas. |
+| **BioAtlas 3D Library (`exercise_library`)** | `IMPLEMENTADO` | Catálogo de 23 exercícios com visualização 3D de alta fidelidade (destaque de agonistas e sinergistas em cores neon), dicas biomecânicas e vídeos de execução. |
+| **BioProfile Studio (`assessment`)** | `IMPLEMENTADO` | Formulário e gestão de perfil físico (peso, altura, objetivo, experiência, restrições e equipamentos disponíveis) com persistência multi-usuário. |
+| **NeuroFatigue & RPE Analytics (`fatigue`)** | `IMPLEMENTADO` | Painel de monitoramento de fadiga acumulada, prontidão de recuperação neuromuscular e gatilhos automáticos de recomendação de Deload. |
+| **BioMeasurements Tracker** | `IMPLEMENTADO` | Modal de registro de medidas corporais com histórico temporal de peso, circunferências corporais e cálculo do percentual de gordura. |
+| **Gamificação & Conquistas (`achievements`)** | `IMPLEMENTADO` | Sistema de 8 medalhas e conquistas desbloqueadas dinamicamente com base em marcos reais de treino e consistência. |
+| **Exportação de Treino em PDF** | `IMPLEMENTADO` | Exportador cliente que sintetiza e faz download de fichas de treino diagramadas no formato PDF via `jspdf`. |
+| **Backup em Nuvem via Google Drive** | `IMPLEMENTADO` | Autenticação OAuth cliente (Google Identity Services) para exportação e importação de backups completos dos dados do atleta. |
+| **Gating de Permissões (Free vs Pro)** | `IMPLEMENTADO` | Modal de bloqueio não invasivo (`PremiumGateModal`) e controle de acesso a recursos avançados baseado no plano do usuário. |
+| **Mecanismo de Assinatura & Checkout** | `PARCIAL` / `SIMULADO` | Telas de seleção de planos, geração de QR Code Pix e criação de sessões Stripe implementadas; executando em modo sandbox/emulado no ambiente de desenvolvimento. |
+| **Modo de Imitação de Arquétipos de Atletas** | `IMPLEMENTADO` | Modelagem biomecânica de cadência (TUT) e RIR baseada em 4 arquétipos de atletas de alto rendimento (`aiImitationEngine.ts`). |
+| **Aplicativo Nativo Mobile (iOS e Android)** | `PLANEJADO` | Portabilidade para aplicativo nativo em Flutter (conforme planejado nas próximas fases do roadmap). |
+| **Integração Direta com Wearables de Hardware** | `PLANEJADO` | Coleta contínua de telemetria via Apple HealthKit e Google Fit em hardware nativo. |
+| **Portal Multi-Atleta para Treinadores/Academias** | `PLANEJADO` | Painel B2B para personal trainers gerenciarem múltiplos alunos simultaneamente. |
 
 ---
 
-## 3. Mandatory Naming & Terminology Rules
+## 2. Nomenclatura Padrão do Sistema
 
-1. All UI text must reference **KINETIX AI™** when mentioning the AI Coach.
-2. All module titles in navigation headers must use standardized titles (**Command Center**, **Fullbody Matrix**, **NutriFlux Engine**, **KINETIX AI™**, **BioAtlas 3D**, **APEX Membership**, **BioProfile Studio**).
-3. Buttons must use active, premium verbs (*Sintetizar*, *Consultar KINETIX AI™*, *Ativar Passe APEX*).
+- **Nome Oficial do Produto**: ATHLETA AI — Apex Performance Suite
+- **Assistente Biomecânico**: KINETIX AI™
+- **Módulos Oficiais**:
+  - `overview`: **Command Center**
+  - `workout_engine`: **Fullbody Matrix**
+  - `workout_logger`: **Tensile Load Logger**
+  - `diet`: **NutriFlux Engine**
+  - `ai_coach`: **KINETIX AI™ Studio**
+  - `exercise_library`: **BioAtlas 3D**
+  - `assessment`: **BioProfile Studio**
+  - `fatigue`: **NeuroFatigue Analytics**
 
 ---
 
-*Product Master Specification created and maintained by Athleta AI Systems Engineering.*
+## 3. Planos e Tiers de Monetização
+
+1. **Athleta Core Pass (`FREE`)**:
+   - Geração de treinos essenciais Full Body.
+   - Acesso aos 12 exercícios fundamentais do BioAtlas 3D.
+   - Cota mensal de 10 consultas com o KINETIX AI™.
+   - Registro de treinos e medidas corporais.
+2. **Athleta APEX Membership (`PRO` / `PREMIUM`)**:
+   - Consultas ilimitadas com o KINETIX AI™.
+   - Acesso irrestrito a todos os 23 exercícios 3D avançados.
+   - Periodização avançada e métricas de NeuroFatigue ilimitadas.
+   - Exportação ilimitada de matrizes em PDF e suporte prioritário.
