@@ -57,7 +57,7 @@ export const exportPlanToPDF = ({ program, userProfile, dietPlan }: ExportPdfOpt
     doc.setFontSize(8);
     doc.setTextColor(148, 163, 184); // Slate 400
     doc.text(
-      'Athleta AI — Sistema Científico de Musculação Full-Body & Dieta Flexível',
+      'Treino MAX — Sistema Científico de Musculação Full-Body & Dieta Flexível',
       margin,
       pageHeight - 8
     );
@@ -79,7 +79,7 @@ export const exportPlanToPDF = ({ program, userProfile, dietPlan }: ExportPdfOpt
   doc.setFont('helvetica', 'bold');
   doc.setFontSize(16);
   doc.setTextColor(255, 255, 255);
-  doc.text('ATHLETA AI', margin + 6, y + 10);
+  doc.text('TREINO MAX', margin + 6, y + 10);
 
   doc.setFontSize(10);
   doc.setTextColor(16, 185, 129); // Emerald

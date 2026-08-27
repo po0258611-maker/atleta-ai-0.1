@@ -1,5 +1,5 @@
 /**
- * ATLETA AI — Comprehensive Test Suite (Implementation 16)
+ * TREINO MAX — Comprehensive Test Suite (Implementation 16)
  *
  * Covers prioritized areas:
  * 1. workoutEngine (Happy path, invalid inputs, missing data, extreme values)
@@ -30,7 +30,7 @@ import { UserProfile, Exercise, SetLog } from '../../src/types';
 
 async function runComprehensiveAutomatedTests() {
   console.log('===================================================================');
-  console.log('   ATLETA AI — EXECUÇÃO DA SUÍTE GERAL DE TESTES AUTOMATIZADOS     ');
+  console.log('   TREINO MAX — EXECUÇÃO DA SUÍTE GERAL DE TESTES AUTOMATIZADOS    ');
   console.log('===================================================================\n');
 
   let passedCount = 0;

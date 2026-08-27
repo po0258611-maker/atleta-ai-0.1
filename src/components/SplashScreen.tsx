@@ -55,8 +55,8 @@ export const SplashScreen: React.FC<SplashScreenProps> = ({ onFinish }) => {
 
         <div className="space-y-1">
           <h1 className="text-3xl font-black text-white tracking-tight flex items-center justify-center space-x-2">
-            <span>ATHLETA</span>
-            <span className="text-rose-500">AI</span>
+            <span>TREINO</span>
+            <span className="text-rose-500">MAX</span>
           </h1>
           <p className="text-xs text-zinc-400 font-semibold tracking-wider uppercase">
             Prescrição Científica & Alta Performance

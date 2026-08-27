@@ -18,7 +18,7 @@ import { DeviceSessionsModal } from './components/DeviceSessionsModal';
 import { BodyMeasurementsModal } from './components/BodyMeasurementsModal';
 import { AchievementsView } from './components/AchievementsView';
 import { PremiumGateModal } from './components/PremiumGateModal';
-import { GoogleDriveView } from './components/GoogleDriveView';
+import { DatabaseStatusModal } from './components/DatabaseStatusModal';
 
 import { exportPlanToPDF } from './services/pdfExporter';
 import { useAuth } from './hooks/useAuth';
@@ -39,6 +39,7 @@ import {
 
 export default function App() {
   const [showSplash, setShowSplash] = useState<boolean>(true);
+  const [isDatabaseModalOpen, setIsDatabaseModalOpen] = useState<boolean>(false);
 
   // 1. Auth Module
   const {
@@ -89,7 +90,6 @@ export default function App() {
     handleSaveProfile,
     handleRegenerateProgram,
     handleSaveWorkoutLog,
-    handleApplyDriveBackup,
   } = useWorkout(currentUser?.id);
 
   // Synchronize profile updates with user account
@@ -155,6 +155,7 @@ export default function App() {
         currentUser={currentUser}
         onOpenAuthModal={() => setIsAuthModalOpen(true)}
         onOpenSubscriptionModal={() => setIsSubscriptionModalOpen(true)}
+        onOpenDatabaseModal={() => setIsDatabaseModalOpen(true)}
         onLogout={handleLogout}
         onExportPDF={() => exportPlanToPDF({ program, userProfile })}
         onToggleMobileMenu={() => setIsMobileNavOpen(!isMobileNavOpen)}
@@ -362,17 +363,6 @@ export default function App() {
               />
             )}
 
-            {/* Google Drive Cloud Backup */}
-            {activeTab === 'google_drive' && (
-              <GoogleDriveView
-                userProfile={userProfile}
-                program={program}
-                workoutLogs={workoutLogs}
-                subscription={subscription}
-                onApplyBackup={handleApplyDriveBackup}
-              />
-            )}
-
             {/* Achievements View */}
             {activeTab === 'achievements' && (
               <AchievementsView
@@ -436,6 +426,13 @@ export default function App() {
             setIsPremiumGateOpen(false);
             setIsSubscriptionModalOpen(true);
           }}
+        />
+      )}
+
+      {isDatabaseModalOpen && (
+        <DatabaseStatusModal
+          isOpen={isDatabaseModalOpen}
+          onClose={() => setIsDatabaseModalOpen(false)}
         />
       )}
     </div>

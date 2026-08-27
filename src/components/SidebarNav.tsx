@@ -11,8 +11,7 @@ import {
   Menu, 
   X, 
   CreditCard, 
-  Activity,
-  Cloud
+  Activity
 } from 'lucide-react';
 
 export type TabType = 
@@ -21,7 +20,6 @@ export type TabType =
   | 'diet'
   | 'ai_coach'
   | 'exercise_library'
-  | 'google_drive'
   | 'assessment'
   | 'subscription'
   | 'fatigue'
@@ -95,16 +93,6 @@ export const SidebarNav: React.FC<SidebarNavProps> = ({
       label: 'Guia de Exercícios',
       icon: BookOpen,
       badge: null,
-    },
-    {
-      id: 'google_drive' as TabType,
-      label: 'Google Drive',
-      icon: Cloud,
-      badge: (
-        <span className="bg-emerald-500/15 text-emerald-400 border border-emerald-500/30 font-black text-[10px] tracking-wider px-2 py-0.5 rounded-md font-mono">
-          Nuvem
-        </span>
-      ),
     },
     {
       id: 'subscription' as TabType,
@@ -217,7 +205,7 @@ export const SidebarNav: React.FC<SidebarNavProps> = ({
                   <div className="h-8 w-8 rounded-lg bg-rose-600 flex items-center justify-center text-white font-bold">
                     <Dumbbell className="h-5 w-5" />
                   </div>
-                  <span className="font-black text-white text-base">Athleta AI</span>
+                  <span className="font-black text-white text-base">Treino MAX</span>
                 </div>
                 <button
                   onClick={() => setIsMobileOpen && setIsMobileOpen(false)}
@@ -255,7 +243,7 @@ export const SidebarNav: React.FC<SidebarNavProps> = ({
             </div>
 
             <div className="pt-4 border-t border-zinc-800/80 text-center text-[11px] text-zinc-400 font-medium">
-              Athleta AI Mobile Engine
+              Treino MAX Mobile Engine
             </div>
           </div>
         </div>

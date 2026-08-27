@@ -21,7 +21,7 @@
 | **KINETIX AI™ (Gemini)** | `server/services/aiService.ts` & `src/components/AICoachView.tsx` | `IMPLEMENTADO` | Assistente biomecânico integrado via `@google/genai` (Gemini Flash), operando com sanitização de segurança e cotas no servidor. |
 | **Motor de Entitlements & RBAC**| `server/services/entitlementService.ts` | `IMPLEMENTADO` | Controle de acesso a recursos (`FREE` vs `PRO/PREMIUM`) com contagem de uso e validação em rotas `/api/entitlements/*`. |
 | **Exportação PDF** | `src/services/pdfExporter.ts` | `IMPLEMENTADO` | Geração direta no cliente de fichas e matrizes de treino em formato PDF via biblioteca `jspdf`. |
-| **Google Drive Cloud Backup** | `src/services/googleDriveService.ts` & `src/services/googleDriveAuth.ts` | `IMPLEMENTADO` | Integração com Google Identity Services (GSI) e Google Drive REST API para exportação e restauração de backups JSON. |
+| **Google Drive Cloud Backup** | `REMOVIDO` | `REMOVIDO` | Integração descontinuada e removida do aplicativo. |
 | **Persistência Firestore** | `src/services/firestoreDataService.ts` & `firestore.rules` | `IMPLEMENTADO` | Persistência NoSQL multi-tenant com isolamento estrito por UID de usuário. |
 | **Cache Offline / Fallback Local**| `src/services/dataMigrationService.ts` | `IMPLEMENTADO` | Sincronização automática e persistência em `localStorage` para operação offline sem perda de estado do atleta. |
 | **Gateway de Pagamento (Stripe/Pix)**| `server/services/payments/*` & `paymentGatewayAdapter.ts` | `PARCIAL` / `SIMULADO` | Fluxo completo de checkout, assinatura, geração de QR Code PIX e webhooks com idempotência; executando com chaves de sandbox no ambiente de desenvolvimento. |
@@ -74,7 +74,7 @@
 |            SERVIÇOS EXTERNOS           |   |          PERSISTÊNCIA REMOTA         |
 |  - Google GenAI (@google/genai)        |   |  - Firebase Auth (Tokens JWT)        |
 |  - Gemini 2.5 / 1.5 Flash              |   |  - Cloud Firestore (Multi-tenant)    |
-|  - Google Drive REST API (OAuth Backup)|   |  - Repositórios Server-Side          |
+|                                        |   |  - Repositórios Server-Side          |
 +----------------------------------------+   +--------------------------------------+
 ```
 

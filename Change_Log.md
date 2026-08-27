@@ -4,6 +4,16 @@ Todas as alterações notáveis no código-fonte, arquitetura e motores do ATHLE
 
 ---
 
+## [2.2.0] - 2026-08-20
+### 🗑️ Remoção da Integração com Google Drive
+- **Remoção de Módulo & Componentes**:
+  - Excluído o visualizador `GoogleDriveView.tsx` e os serviços `googleDriveService.ts` e `googleDriveAuth.ts`.
+  - Removido o item de menu "Google Drive" (ícone de Nuvem) da barra lateral de navegação (`SidebarNav.tsx`) e do menu de perfil no cabeçalho (`Header.tsx`).
+  - Limpeza dos hooks (`useWorkout.ts`) e rotas principais (`App.tsx`).
+  - Documentação do projeto atualizada refletindo a remoção do serviço.
+
+---
+
 ## [2.1.0] - 2026-08-20
 ### 🛡️ Auditoria de Alinhamento (Documentação × Código Real)
 - **Classificação Formal de Funcionalidades**:

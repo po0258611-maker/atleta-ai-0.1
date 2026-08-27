@@ -24,6 +24,7 @@ import {
   VolumeX,
   Gauge,
   ShieldCheck,
+  Search,
 } from 'lucide-react';
 
 interface ExerciseDetailModalProps {
@@ -205,19 +206,19 @@ export const ExerciseDetailModal: React.FC<ExerciseDetailModalProps> = ({
                 <div className="flex items-center space-x-1">
                   <button
                     onClick={() => setActiveMediaTab('video_free')}
-                    className={`flex items-center space-x-1.5 px-2.5 py-1.5 rounded-xl text-xs font-bold transition-all cursor-pointer ${
+                    className={`flex items-center space-x-1.5 px-3 py-1.5 rounded-xl text-xs font-bold transition-all cursor-pointer ${
                       activeMediaTab === 'video_free'
                         ? 'bg-emerald-500 text-slate-950 shadow-md shadow-emerald-950/50'
                         : 'text-slate-400 hover:text-slate-200 hover:bg-slate-800'
                     }`}
                   >
                     <Video className="h-3.5 w-3.5" />
-                    <span>Vídeo Livre PT</span>
+                    <span>Vídeo (YouTube)</span>
                   </button>
 
                   <button
                     onClick={() => setActiveMediaTab('demo')}
-                    className={`flex items-center space-x-1.5 px-2.5 py-1.5 rounded-xl text-xs font-bold transition-all cursor-pointer ${
+                    className={`flex items-center space-x-1.5 px-3 py-1.5 rounded-xl text-xs font-bold transition-all cursor-pointer ${
                       activeMediaTab === 'demo'
                         ? 'bg-emerald-500 text-slate-950 shadow-md shadow-emerald-950/50'
                         : 'text-slate-400 hover:text-slate-200 hover:bg-slate-800'
@@ -229,7 +230,7 @@ export const ExerciseDetailModal: React.FC<ExerciseDetailModalProps> = ({
 
                   <button
                     onClick={() => setActiveMediaTab('3d')}
-                    className={`flex items-center space-x-1.5 px-2.5 py-1.5 rounded-xl text-xs font-bold transition-all cursor-pointer ${
+                    className={`flex items-center space-x-1.5 px-3 py-1.5 rounded-xl text-xs font-bold transition-all cursor-pointer ${
                       activeMediaTab === '3d'
                         ? 'bg-cyan-500 text-slate-950 shadow-md shadow-cyan-950/50'
                         : 'text-slate-400 hover:text-slate-200 hover:bg-slate-800'
@@ -256,7 +257,7 @@ export const ExerciseDetailModal: React.FC<ExerciseDetailModalProps> = ({
               </div>
 
               {/* Active Tab View */}
-              <div className="flex-1 flex flex-col items-center justify-center relative bg-slate-950 min-h-[220px]">
+              <div className="flex-1 flex flex-col items-center justify-center relative bg-slate-950 min-h-[240px]">
                 {activeMediaTab === 'video_free' ? (
                   exercise.videoUrlMp4 ? (
                     <div className="w-full h-full relative bg-black flex flex-col items-center justify-center overflow-hidden">
@@ -282,46 +283,65 @@ export const ExerciseDetailModal: React.FC<ExerciseDetailModalProps> = ({
                     </div>
                   ) : videoId ? (
                     <div className="w-full h-full relative bg-black flex flex-col items-center justify-center overflow-hidden">
+                      {/* Video Player */}
                       <iframe
-                        src={`https://www.youtube.com/embed/${videoId}?hl=pt-BR&cc_lang_pref=pt-BR&cc_load_policy=1&rel=0&modestbranding=1&autoplay=0`}
+                        src={`https://www.youtube-nocookie.com/embed/${videoId}?hl=pt-BR&cc_lang_pref=pt-BR&rel=0&modestbranding=1&playsinline=1`}
                         title={`Vídeo demonstrativo de ${exercise.nome}`}
-                        className="w-full h-[220px] sm:h-[250px] border-0"
+                        className="w-full h-[210px] sm:h-[240px] border-0"
                         allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
                         allowFullScreen
                       />
                       
                       {/* Subtitle & Fallback Toolbar */}
-                      <div className="w-full bg-slate-900/95 border-t border-slate-800 p-2 px-3 flex flex-wrap items-center justify-between text-[11px] text-slate-300 gap-2">
-                        <div className="flex items-center space-x-1.5">
-                          <span className="bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 px-1.5 py-0.5 rounded text-[10px] font-bold">
-                            PT-BR
-                          </span>
-                          <span className="truncate max-w-[180px] sm:max-w-[280px]">
-                            {exercise.videoLegendaPT || exercise.dicaPrincipal || exercise.execucao}
-                          </span>
+                      <div className="w-full bg-slate-900 border-t border-slate-800 p-2.5 px-3 flex flex-col gap-2">
+                        <div className="flex items-center justify-between text-[11px] text-slate-300 gap-2 flex-wrap">
+                          <div className="flex items-center space-x-1.5 truncate">
+                            <span className="bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 px-1.5 py-0.5 rounded text-[10px] font-bold shrink-0">
+                              PT-BR
+                            </span>
+                            <span className="truncate max-w-[240px] sm:max-w-[340px] text-slate-300 text-xs">
+                              {exercise.videoLegendaPT || exercise.dicaPrincipal || exercise.execucao}
+                            </span>
+                          </div>
+
+                          {/* Direct Action Links */}
+                          <div className="flex items-center space-x-2 shrink-0">
+                            <a
+                              href={`https://www.youtube.com/watch?v=${videoId}`}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className="inline-flex items-center space-x-1 bg-red-600 hover:bg-red-500 text-white px-2.5 py-1 rounded-lg font-bold text-[11px] transition-all shadow-md shadow-red-950/40"
+                              title="Abrir diretamente no YouTube em nova aba"
+                            >
+                              <ExternalLink className="h-3 w-3" />
+                              <span>Abrir no YouTube</span>
+                            </a>
+
+                            <button
+                              onClick={() => setActiveMediaTab('demo')}
+                              className="inline-flex items-center space-x-1 bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 hover:bg-emerald-500/30 px-2.5 py-1 rounded-lg text-[11px] font-bold transition-all cursor-pointer"
+                              title="Ativar Guia Biomecânico Animado"
+                            >
+                              <Sparkles className="h-3 w-3" />
+                              <span>Guia Animado</span>
+                            </button>
+                          </div>
                         </div>
 
-                        {/* Direct YouTube / Search Links */}
-                        <div className="flex items-center space-x-2 shrink-0">
+                        {/* Fallback Notice Banner */}
+                        <div className="bg-slate-950/70 rounded-xl p-2 px-3 border border-slate-800/80 flex items-center justify-between text-[10px] text-slate-400 gap-2">
+                          <span className="flex items-center gap-1.5">
+                            <Lightbulb className="h-3.5 w-3.5 text-amber-400 shrink-0" />
+                            <span>Se o YouTube exibir restrição no player, acesse o <strong>Guia Animado</strong> ou abra no YouTube.</span>
+                          </span>
                           <a
-                            href={`https://www.youtube.com/watch?v=${videoId}`}
+                            href={`https://www.youtube.com/results?search_query=${encodeURIComponent(exercise.nome + ' como fazer execucao correta musculacao')}`}
                             target="_blank"
                             rel="noopener noreferrer"
-                            className="inline-flex items-center space-x-1 bg-red-600 hover:bg-red-500 text-white px-2.5 py-1 rounded-lg font-bold text-[10px] transition-all"
-                            title="Abrir diretamente no YouTube em nova aba"
+                            className="text-cyan-400 hover:underline shrink-0 font-medium"
                           >
-                            <ExternalLink className="h-3 w-3" />
-                            <span>Abrir no YouTube</span>
+                            Pesquisar no YouTube →
                           </a>
-
-                          <button
-                            onClick={() => setActiveMediaTab('demo')}
-                            className="inline-flex items-center space-x-1 bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 hover:bg-emerald-500/30 px-2 py-1 rounded-lg text-[10px] font-bold transition-all cursor-pointer"
-                            title="Usar demonstração animada interna"
-                          >
-                            <Sparkles className="h-3 w-3" />
-                            <span>Guia Animado</span>
-                          </button>
                         </div>
                       </div>
                     </div>
@@ -344,7 +364,7 @@ export const ExerciseDetailModal: React.FC<ExerciseDetailModalProps> = ({
 
                       <div className="flex items-center space-x-2 pt-1">
                         <span className="text-[10px] bg-slate-900 text-emerald-400 border border-emerald-500/30 px-2.5 py-0.5 rounded-full font-mono">
-                          Cadência recomendada: {exercise.cadencia}
+                          Cadência: {exercise.cadencia}
                         </span>
                         <span className="text-[10px] bg-slate-900 text-cyan-400 border border-cyan-500/30 px-2.5 py-0.5 rounded-full font-mono">
                           RIR: {exercise.rir}
@@ -353,40 +373,84 @@ export const ExerciseDetailModal: React.FC<ExerciseDetailModalProps> = ({
                     </div>
                   )
                 ) : activeMediaTab === 'demo' ? (
-                  /* Interactive Animated Execution Guide */
-                  <div className="w-full h-full p-5 flex flex-col items-center justify-center relative overflow-hidden bg-slate-950 text-center space-y-3">
-                    <div className="relative w-24 h-24 rounded-full border-2 border-emerald-500/50 bg-emerald-950/40 flex items-center justify-center shadow-xl shadow-emerald-950/80 animate-pulse">
-                      <Dumbbell className="h-12 w-12 text-emerald-400 rotate-12 transition-transform duration-700" />
+                  /* Interactive Animated Kinematic Execution Guide */
+                  <div className="w-full h-full p-4 sm:p-5 flex flex-col items-center justify-center relative overflow-hidden bg-slate-950 text-center space-y-3.5">
+                    {/* Visual Animated Kinematic Stage */}
+                    <div className="relative w-full max-w-sm bg-slate-900/90 rounded-2xl border border-slate-800 p-4 flex items-center justify-around shadow-lg">
+                      <div className="flex flex-col items-center space-y-1">
+                        <div className="w-12 h-12 rounded-2xl bg-emerald-950/80 border border-emerald-500/40 flex items-center justify-center text-emerald-400 animate-pulse">
+                          <Dumbbell className="h-6 w-6 rotate-12" />
+                        </div>
+                        <span className="text-[10px] font-bold text-emerald-400 uppercase tracking-wide">Padrão Motor</span>
+                        <span className="text-xs font-bold text-white uppercase">{exercise.padraoMotor || 'Compound'}</span>
+                      </div>
+
+                      <div className="h-10 w-px bg-slate-800" />
+
+                      <div className="flex flex-col items-center space-y-1">
+                        <div className="w-12 h-12 rounded-2xl bg-cyan-950/80 border border-cyan-500/40 flex items-center justify-center text-cyan-400">
+                          <Gauge className="h-6 w-6" />
+                        </div>
+                        <span className="text-[10px] font-bold text-cyan-400 uppercase tracking-wide">Cadência</span>
+                        <span className="text-xs font-bold text-white font-mono">{exercise.cadencia}</span>
+                      </div>
+
+                      <div className="h-10 w-px bg-slate-800" />
+
+                      <div className="flex flex-col items-center space-y-1">
+                        <div className="w-12 h-12 rounded-2xl bg-amber-950/80 border border-amber-500/40 flex items-center justify-center text-amber-400">
+                          <Target className="h-6 w-6" />
+                        </div>
+                        <span className="text-[10px] font-bold text-amber-400 uppercase tracking-wide">Alvo</span>
+                        <span className="text-xs font-bold text-white capitalize">{exercise.grupoMuscular}</span>
+                      </div>
                     </div>
 
-                    <div className="space-y-1.5 max-w-md">
-                      <div className="flex items-center justify-center space-x-2 text-emerald-400 text-xs font-extrabold uppercase tracking-wide">
-                        <Sparkles className="h-4 w-4" />
-                        <span>Guia Animado Biomecânico Athleta AI</span>
+                    {/* Cadence Phase Visualizer Bar */}
+                    <div className="w-full max-w-sm bg-slate-900/80 p-3 rounded-2xl border border-slate-800 text-left space-y-2">
+                      <div className="flex items-center justify-between text-[11px]">
+                        <span className="font-bold text-emerald-400 flex items-center gap-1.5">
+                          <Sparkles className="h-3.5 w-3.5 text-emerald-400" />
+                          Ciclo de Repetição Ideal
+                        </span>
+                        <span className="text-[10px] font-mono bg-emerald-500/20 text-emerald-300 px-2 py-0.5 rounded-full border border-emerald-500/30">
+                          RIR {exercise.rir} (Reserva)
+                        </span>
                       </div>
-                      <p className="text-xs text-slate-200 leading-relaxed font-medium bg-slate-900/80 p-3 rounded-2xl border border-slate-800">
+                      
+                      <p className="text-xs text-slate-200 leading-relaxed font-medium">
                         {exercise.execucao}
                       </p>
+
+                      {exercise.dicaPrincipal && (
+                        <div className="bg-emerald-950/40 border border-emerald-500/20 rounded-xl p-2 text-[11px] text-emerald-300 flex items-start gap-1.5">
+                          <Lightbulb className="h-3.5 w-3.5 text-emerald-400 shrink-0 mt-0.5" />
+                          <span><strong>Dica de Ouro:</strong> {exercise.dicaPrincipal}</span>
+                        </div>
+                      )}
                     </div>
 
                     <div className="flex flex-wrap items-center justify-center gap-2 pt-1 text-[10px]">
-                      <span className="bg-emerald-950/80 text-emerald-300 border border-emerald-500/30 px-3 py-1 rounded-full font-mono font-bold">
-                        Cadência: {exercise.cadencia}
-                      </span>
-                      <span className="bg-cyan-950/80 text-cyan-300 border border-cyan-500/30 px-3 py-1 rounded-full font-mono font-bold">
-                        Reserva (RIR): {exercise.rir}
-                      </span>
                       {videoId && (
                         <a
                           href={`https://www.youtube.com/watch?v=${videoId}`}
                           target="_blank"
                           rel="noopener noreferrer"
-                          className="bg-red-600/90 hover:bg-red-500 text-white px-3 py-1 rounded-full font-bold flex items-center gap-1 transition-all"
+                          className="bg-red-600/90 hover:bg-red-500 text-white px-3 py-1.5 rounded-full font-bold flex items-center gap-1.5 transition-all shadow-md"
                         >
                           <ExternalLink className="h-3 w-3" />
-                          <span>Abrir no YouTube</span>
+                          <span>Assistir Vídeo no YouTube</span>
                         </a>
                       )}
+                      <a
+                        href={`https://www.youtube.com/results?search_query=${encodeURIComponent(exercise.nome + ' execucao biomecanica')}`}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="bg-slate-800 hover:bg-slate-700 text-cyan-300 border border-slate-700 px-3 py-1.5 rounded-full font-bold flex items-center gap-1.5 transition-all"
+                      >
+                        <Search className="h-3 w-3" />
+                        <span>Pesquisar no YouTube PT-BR</span>
+                      </a>
                     </div>
                   </div>
                 ) : (

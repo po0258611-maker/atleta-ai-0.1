@@ -62,7 +62,7 @@ export const AICoachView: React.FC<AICoachViewProps> = ({
     {
       id: 'init-1',
       sender: 'ai',
-      text: `Olá, **${profile.name}**! Eu sou o **KINETIX AI™**, sua inteligência biomecânica e de performance de alta precisão do Athleta AI.
+      text: `Olá, **${profile.name}**! Eu sou o **KINETIX AI™**, sua inteligência biomecânica e de performance de alta precisão do Treino MAX.
 
 Fui projetado com foco em **ciência do exercício, controle biomecânico e otimização metabólica**:
 - **Treinamento & Biomecânica de Precisão:** Prescrição Full Body, vetor de força, RIR/RPE e gestão de fadiga central.
@@ -105,7 +105,7 @@ Como posso orientar seus treinos ou estratégia metabólica hoje?`,
       if (onOpenPremiumGate) {
         onOpenPremiumGate(
           'Consultas Ilimitadas no KINETIX AI™',
-          `Você atingiu o limite de ${permissions.maxKinetixAiQueriesPerDay} consultas gratuitas por sessão do Athleta Core Pass. Assine o Passe APEX para obter acessos ilimitados e sem restrições.`
+          `Você atingiu o limite de ${permissions.maxKinetixAiQueriesPerDay} consultas gratuitas por sessão do Treino MAX Core Pass. Assine o Passe APEX para obter acessos ilimitados e sem restrições.`
         );
       }
       return;
@@ -190,7 +190,7 @@ Como posso orientar seus treinos ou estratégia metabólica hoje?`,
           <div className="flex flex-wrap items-center gap-2 mb-1">
             <div className="inline-flex items-center space-x-1.5 bg-emerald-500/10 border border-emerald-500/30 text-emerald-300 px-3 py-1 rounded-full text-xs font-bold">
               <Zap className="h-3.5 w-3.5 text-emerald-400" />
-              <span>Google Gemini 3.6 Flash</span>
+              <span>Google Gemini 3.7 Flash</span>
             </div>
 
             <div className={`inline-flex items-center space-x-1.5 px-3 py-1 rounded-full text-xs font-black uppercase tracking-wider ${
@@ -326,7 +326,7 @@ Como posso orientar seus treinos ou estratégia metabólica hoje?`,
           {loading && (
             <div className="flex items-center space-x-3 text-emerald-400 text-xs bg-slate-900 p-4 rounded-2xl border border-slate-800 w-fit shadow-lg animate-pulse">
               <Sparkles className="h-4 w-4 animate-spin text-emerald-400" />
-              <span className="font-semibold">Gemini 3.6 Flash consultando diretrizes científicas...</span>
+              <span className="font-semibold">KINETIX AI™ (Gemini 3.7 Flash) analisando parâmetros biomecânicos e metabólicos...</span>
             </div>
           )}
 

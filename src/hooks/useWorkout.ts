@@ -2,7 +2,6 @@ import { useState, useEffect } from 'react';
 import { UserProfile, FullBodyProgram, WorkoutLog } from '../types';
 import { generateFullBodyWorkout } from '../engine/workoutEngine';
 import { FirestoreDataService } from '../services/firestoreDataService';
-import { AthletaBackupPayload } from '../services/googleDriveService';
 
 export const INITIAL_PROFILE: UserProfile = {
   name: 'Atleta Google',
@@ -91,25 +90,6 @@ export function useWorkout(userId?: string) {
     }
   };
 
-  const handleApplyDriveBackup = async (backup: AthletaBackupPayload) => {
-    if (backup.userProfile) {
-      setUserProfile(backup.userProfile);
-      if (userId) await FirestoreDataService.saveUserProfile(userId, backup.userProfile);
-    }
-    if (backup.program) {
-      setProgram(backup.program);
-      if (userId) await FirestoreDataService.saveActiveWorkout(userId, backup.program);
-    }
-    if (backup.workoutLogs && Array.isArray(backup.workoutLogs)) {
-      setWorkoutLogs(backup.workoutLogs);
-      if (userId) {
-        for (const log of backup.workoutLogs) {
-          await FirestoreDataService.saveWorkoutLog(userId, log);
-        }
-      }
-    }
-  };
-
   return {
     userProfile,
     setUserProfile,
@@ -122,6 +102,5 @@ export function useWorkout(userId?: string) {
     handleSaveProfile,
     handleRegenerateProgram,
     handleSaveWorkoutLog,
-    handleApplyDriveBackup,
   };
 }

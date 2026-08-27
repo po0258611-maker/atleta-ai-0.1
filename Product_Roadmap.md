@@ -59,7 +59,7 @@
 | **Cálculo de TMB e Macros (NutriFlux)** | Fase 1 | `IMPLEMENTADO` | Equação de Mifflin-St Jeor em `src/engine/dietEngine.ts`. |
 | **KINETIX AI™ Biomechanical Studio** | Fase 1 | `IMPLEMENTADO` | API proxy protegida no servidor via `@google/genai`. |
 | **Exportação PDF de Treinos** | Fase 1 | `IMPLEMENTADO` | Geração direta no cliente com biblioteca `jspdf`. |
-| **Sincronização com Google Drive** | Fase 1 | `IMPLEMENTADO` | Backup e restauração JSON via API REST do Google Drive. |
+| **Sincronização com Google Drive** | Fase 1 | `REMOVIDO` | Integração descontinuada e removida do aplicativo. |
 | **Autenticação Firebase & Sessão** | Fase 2 | `IMPLEMENTADO` | Suporte a Google Auth, Email/Senha e Sessão criptográfica. |
 | **Persistência Firestore Multi-tenant**| Fase 2 | `IMPLEMENTADO` | Coleções particionadas por UID de usuário com fallback local. |
 | **Controle de Cotas e RBAC no Backend**| Fase 2 | `IMPLEMENTADO` | Avaliação no servidor com bloqueio automático ao atingir cotas. |

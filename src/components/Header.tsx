@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Dumbbell, User, Menu, LogIn, LogOut, ChevronDown, Sparkles, FileDown, CreditCard, ShieldCheck, Cloud } from 'lucide-react';
+import { Dumbbell, User, Menu, LogIn, LogOut, ChevronDown, Sparkles, FileDown, CreditCard, ShieldCheck, Database } from 'lucide-react';
 import { TabType } from './SidebarNav';
 import { UserAccount } from '../services/authService';
 
@@ -10,6 +10,7 @@ interface HeaderProps {
   currentUser: UserAccount | null;
   onOpenAuthModal: () => void;
   onOpenSubscriptionModal?: () => void;
+  onOpenDatabaseModal?: () => void;
   onLogout: () => void;
   onExportPDF?: () => void;
   onToggleMobileMenu?: () => void;
@@ -22,6 +23,7 @@ export const Header: React.FC<HeaderProps> = ({
   currentUser,
   onOpenAuthModal,
   onOpenSubscriptionModal,
+  onOpenDatabaseModal,
   onLogout,
   onExportPDF,
   onToggleMobileMenu 
@@ -53,13 +55,13 @@ export const Header: React.FC<HeaderProps> = ({
               <div>
                 <div className="flex items-center space-x-2">
                   <span className="font-black text-xl tracking-tight text-white flex items-center gap-1">
-                    ATHLETA <span className="text-rose-500">AI</span>
+                    TREINO <span className="text-rose-500">MAX</span>
                   </span>
                   <span className="text-[10px] font-black uppercase tracking-wider bg-rose-500/15 text-rose-400 border border-rose-500/30 px-2 py-0.5 rounded-full font-mono hidden sm:inline-block">
                     APEX SUITE
                   </span>
                 </div>
-                <p className="text-[11px] text-zinc-400 hidden sm:block font-medium">Engineered for Human Apex Performance</p>
+                <p className="text-[11px] text-zinc-400 hidden sm:block font-medium">Motor Científico de Musculação & Performance</p>
               </div>
             </div>
           </div>
@@ -130,17 +132,6 @@ export const Header: React.FC<HeaderProps> = ({
 
                     <button
                       onClick={() => {
-                        setActiveTab('google_drive');
-                        setUserDropdownOpen(false);
-                      }}
-                      className="w-full text-left px-4 py-2 text-xs text-zinc-300 hover:text-emerald-400 hover:bg-zinc-900 flex items-center space-x-2 cursor-pointer transition-colors font-medium"
-                    >
-                      <Cloud className="h-4 w-4 text-emerald-400" />
-                      <span>Google Drive (Backup & Nuvem)</span>
-                    </button>
-
-                    <button
-                      onClick={() => {
                         setActiveTab('assessment');
                         setUserDropdownOpen(false);
                       }}
@@ -149,6 +140,19 @@ export const Header: React.FC<HeaderProps> = ({
                       <User className="h-4 w-4" />
                       <span>Editar Perfil de Atleta</span>
                     </button>
+
+                    {onOpenDatabaseModal && (
+                      <button
+                        onClick={() => {
+                          onOpenDatabaseModal();
+                          setUserDropdownOpen(false);
+                        }}
+                        className="w-full text-left px-4 py-2 text-xs text-emerald-400 hover:bg-emerald-500/10 flex items-center space-x-2 cursor-pointer transition-colors font-medium"
+                      >
+                        <Database className="h-4 w-4 text-emerald-400" />
+                        <span>Banco de Dados / API</span>
+                      </button>
+                    )}
 
                     <button
                       onClick={() => {
@@ -195,6 +199,18 @@ export const Header: React.FC<HeaderProps> = ({
               >
                 <FileDown className="h-4 w-4" />
                 <span className="hidden sm:inline">Exportar PDF</span>
+              </button>
+            )}
+
+            {/* DB Status Button */}
+            {onOpenDatabaseModal && (
+              <button
+                onClick={onOpenDatabaseModal}
+                className="hidden sm:flex items-center space-x-1.5 bg-emerald-500/10 hover:bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 px-3 py-2 rounded-xl text-xs font-semibold transition-all cursor-pointer active:scale-95"
+                title="Status do Banco de Dados & API Supabase"
+              >
+                <Database className="h-3.5 w-3.5 text-emerald-400" />
+                <span className="hidden lg:inline font-mono text-[11px]">DB Online</span>
               </button>
             )}
 

@@ -61,7 +61,7 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({ onLoginSuccess, isLoad
           </div>
           <div>
             <h1 className="text-2xl font-black text-white tracking-tight flex items-center justify-center gap-2">
-              ATHLETA <span className="text-rose-500">AI</span>
+              TREINO <span className="text-rose-500">MAX</span>
               <span className="text-[10px] bg-rose-500/20 text-rose-400 border border-rose-500/30 px-2.5 py-0.5 rounded-full font-bold uppercase tracking-wider">
                 APEX SUITE
               </span>

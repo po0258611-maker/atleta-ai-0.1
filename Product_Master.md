@@ -21,7 +21,7 @@
 | **BioMeasurements Tracker** | `IMPLEMENTADO` | Modal de registro de medidas corporais com histórico temporal de peso, circunferências corporais e cálculo do percentual de gordura. |
 | **Gamificação & Conquistas (`achievements`)** | `IMPLEMENTADO` | Sistema de 8 medalhas e conquistas desbloqueadas dinamicamente com base em marcos reais de treino e consistência. |
 | **Exportação de Treino em PDF** | `IMPLEMENTADO` | Exportador cliente que sintetiza e faz download de fichas de treino diagramadas no formato PDF via `jspdf`. |
-| **Backup em Nuvem via Google Drive** | `IMPLEMENTADO` | Autenticação OAuth cliente (Google Identity Services) para exportação e importação de backups completos dos dados do atleta. |
+| **Backup em Nuvem via Google Drive** | `REMOVIDO` | Funcionalidade descontinuada e removida do aplicativo. |
 | **Gating de Permissões (Free vs Pro)** | `IMPLEMENTADO` | Modal de bloqueio não invasivo (`PremiumGateModal`) e controle de acesso a recursos avançados baseado no plano do usuário. |
 | **Mecanismo de Assinatura & Checkout** | `PARCIAL` / `SIMULADO` | Telas de seleção de planos, geração de QR Code Pix e criação de sessões Stripe implementadas; executando em modo sandbox/emulado no ambiente de desenvolvimento. |
 | **Modo de Imitação de Arquétipos de Atletas** | `IMPLEMENTADO` | Modelagem biomecânica de cadência (TUT) e RIR baseada em 4 arquétipos de atletas de alto rendimento (`aiImitationEngine.ts`). |

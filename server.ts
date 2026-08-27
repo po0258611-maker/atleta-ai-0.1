@@ -5,6 +5,7 @@ import { authRouter } from "./server/routes/authRoutes";
 import { aiRouter } from "./server/routes/aiRoutes";
 import { entitlementRouter } from "./server/routes/entitlementRoutes";
 import { subscriptionRouter } from "./server/routes/subscriptionRoutes";
+import { databaseRouter } from "./server/routes/databaseRoutes";
 import { errorHandler } from "./server/middlewares/errorHandler";
 import { logger } from "./server/middlewares/logger";
 import { SERVER_CONFIG } from "./server/config/env";
@@ -38,6 +39,7 @@ async function startServer() {
   app.use("/api/auth", authRouter);
   app.use("/api/entitlements", entitlementRouter);
   app.use("/api/subscriptions", subscriptionRouter);
+  app.use("/api/database", databaseRouter);
   app.use("/api", aiRouter);
 
   // Error handling middleware for API

@@ -147,7 +147,7 @@ export const SubscriptionModal: React.FC<SubscriptionModalProps> = ({
             <span>GATEWAY SERVER-AUTHORITATIVE ATIVO</span>
           </div>
           <h2 className="text-2xl font-black text-white tracking-tight">
-            Assinatura Athleta AI PRO & APEX
+            Assinatura Treino MAX PRO & APEX
           </h2>
           <p className="text-xs text-zinc-400">
             Acesso ilimitado ao AI Coach KINETIX, BioAtlas 3D e prescrições Full Body avançadas.

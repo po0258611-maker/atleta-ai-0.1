@@ -23,7 +23,7 @@ export const LegalModal: React.FC<LegalModalProps> = ({ isOpen, type, onClose })
             </div>
             <div>
               <h2 className="text-lg font-bold text-white">
-                {isTerms ? 'Termos de Uso Athleta AI' : 'Política de Privacidade & LGPD'}
+                {isTerms ? 'Termos de Uso Treino MAX' : 'Política de Privacidade & LGPD'}
               </h2>
               <p className="text-xs text-slate-400">
                 Última atualização: Agosto de 2026 • Versão 2.4 (Conforme LGPD/GDPR)
@@ -35,7 +35,7 @@ export const LegalModal: React.FC<LegalModalProps> = ({ isOpen, type, onClose })
             onClick={onClose}
             className="p-2 text-slate-400 hover:text-white bg-slate-900 hover:bg-slate-800 rounded-xl transition-all cursor-pointer"
           >
-            <X className="h-5 w-5" />
+            <X className="h-4 w-4" />
           </button>
         </div>
 
@@ -45,22 +45,22 @@ export const LegalModal: React.FC<LegalModalProps> = ({ isOpen, type, onClose })
             <>
               <h3 className="text-sm font-bold text-white">1. Aceitação dos Termos</h3>
               <p>
-                Ao acessar e utilizar o aplicativo **Athleta AI**, você concorda expressamente em cumprir estes Termos de Uso e todas as leis aplicáveis. A assinatura individual Athleta PRO (R$ 15,00/mês ou R$ 120,00/ano) concede acesso às funcionalidades exclusivas de geração de prescrição de treino e cálculo de macronutrientes.
+                Ao acessar e utilizar o aplicativo **Treino MAX**, você concorda expressamente em cumprir estes Termos de Uso e todas as leis aplicáveis. A assinatura individual Treino MAX PRO (R$ 15,00/mês ou R$ 120,00/ano) concede acesso às funcionalidades exclusivas de geração de prescrição de treino e cálculo de macronutrientes.
               </p>
 
               <h3 className="text-sm font-bold text-white">2. Isenção de Responsabilidade Médica</h3>
               <p>
-                As recomendações fornecidas pelo Motor de Inteligência Artificial do Athleta AI têm caráter estritamente informativo e educativo com base em literatura de educação física. O usuário deve consultar um médico ou profissional de saúde habilitado antes de iniciar qualquer programa de exercícios intensos.
+                As recomendações fornecidas pelo Motor de Inteligência Artificial do Treino MAX têm caráter estritamente informativo e educativo com base em literatura de educação física. O usuário deve consultar um médico ou profissional de saúde habilitado antes de iniciar qualquer programa de exercícios intensos.
               </p>
 
               <h3 className="text-sm font-bold text-white">3. Assinatura, Cobrança e Cancelamento</h3>
               <p>
-                As assinaturas digitais do Athleta AI são processadas via Google Play Billing ou gateway de pagamento seguro. O cancelamento pode ser efetuado a qualquer momento nas configurações do aplicativo ou na sua conta do Google Play, sem aplicação de multas ou fidelidade obrigatória.
+                As assinaturas digitais do Treino MAX são processadas via Google Play Billing ou gateway de pagamento seguro. O cancelamento pode ser efetuado a qualquer momento nas configurações do aplicativo ou na sua conta do Google Play, sem aplicação de multas ou fidelidade obrigatória.
               </p>
 
               <h3 className="text-sm font-bold text-white">4. Propriedade Intelectual</h3>
               <p>
-                Todos os algoritmos de prescrição biomecânica, marcas, logos e conteúdos de exercícios são de propriedade exclusiva do Athleta AI.
+                Todos os algoritmos de prescrição biomecânica, marcas, logos e conteúdos de exercícios são de propriedade exclusiva do Treino MAX.
               </p>
             </>
           ) : (
@@ -82,7 +82,7 @@ export const LegalModal: React.FC<LegalModalProps> = ({ isOpen, type, onClose })
 
               <h3 className="text-sm font-bold text-white">4. Não Compartilhamento com Terceiros</h3>
               <p>
-                O Athleta AI não vende nem compartilha dados pessoais ou histórico de treinos com parceiros de anúncios comerciais.
+                O Treino MAX não vende nem compartilha dados pessoais ou histórico de treinos com parceiros de anúncios comerciais.
               </p>
             </>
           )}

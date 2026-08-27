@@ -24,7 +24,7 @@ O ATHLETA AI é uma plataforma full-stack para atletas, praticantes de musculaç
 7. **BioProfile Studio (`assessment`)** — `IMPLEMENTADO`
 8. **NeuroFatigue Analytics (`fatigue`)** — `IMPLEMENTADO`
 9. **Exportador PDF (`pdfExporter`)** — `IMPLEMENTADO`
-10. **Google Drive Cloud Sync** — `IMPLEMENTADO`
+10. **Google Drive Cloud Sync** — `REMOVIDO`
 11. **Gateway de Assinaturas (Stripe/Pix)** — `PARCIAL` / `SIMULADO` (Sandbox)
 12. **App Nativo Mobile Flutter** — `PLANEJADO`
 

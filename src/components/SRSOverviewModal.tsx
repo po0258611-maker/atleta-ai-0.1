@@ -15,7 +15,7 @@ export const SRSOverviewModal: React.FC = () => {
           Arquitetura de Sistema & Especificação de Engenharia
         </h2>
         <p className="text-sm text-slate-400 mt-1">
-          Documentação de arquitetura do Athleta AI organizada em 4 Motores Independentes desacoplados (Clean Architecture & SOLID).
+          Documentação de arquitetura do Treino MAX organizada em 4 Motores Independentes desacoplados (Clean Architecture & SOLID).
         </p>
       </div>
 

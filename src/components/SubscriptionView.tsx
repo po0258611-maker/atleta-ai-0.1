@@ -118,7 +118,7 @@ export const SubscriptionView: React.FC<SubscriptionViewProps> = ({
         <div className="relative z-10 space-y-4">
           <div className="inline-flex items-center space-x-2 px-3 py-1 bg-rose-500/15 border border-rose-500/30 rounded-full text-rose-300 text-xs font-bold uppercase tracking-wider">
             <Sparkles className="h-3.5 w-3.5 text-rose-400" />
-            <span>Athleta APEX Membership</span>
+            <span>Treino MAX APEX Membership</span>
           </div>
 
           <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
@@ -240,7 +240,7 @@ export const SubscriptionView: React.FC<SubscriptionViewProps> = ({
             <div className="text-xs font-bold text-zinc-400 uppercase tracking-wider">
               Plano Mensal
             </div>
-            <h3 className="text-2xl font-black text-white">Athleta PRO</h3>
+            <h3 className="text-2xl font-black text-white">Treino MAX PRO</h3>
             <p className="text-xs text-zinc-400">Flexibilidade total, cancele quando desejar.</p>
           </div>
 
@@ -298,7 +298,7 @@ export const SubscriptionView: React.FC<SubscriptionViewProps> = ({
               <Star className="h-3.5 w-3.5 fill-rose-500" />
               <span>Mais Popular • Anual</span>
             </div>
-            <h3 className="text-2xl font-black text-white">Athleta APEX</h3>
+            <h3 className="text-2xl font-black text-white">Treino MAX APEX</h3>
             <p className="text-xs text-zinc-400">12 meses de evolução contínua pelo melhor valor.</p>
           </div>
 
