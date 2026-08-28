@@ -1,3 +1,4 @@
+import "dotenv/config";
 import express from "express";
 import path from "path";
 import { createServer as createViteServer } from "vite";
@@ -13,50 +14,58 @@ import { SERVER_CONFIG } from "./server/config/env";
 async function startServer() {
   const app = express();
   const PORT = SERVER_CONFIG.PORT;
+  const isProduction = SERVER_CONFIG.NODE_ENV === "production";
+
+  app.disable("x-powered-by");
 
   // JSON Body Parser with safe payload limit
-  app.use(express.json({ limit: '1mb' }));
+  app.use(express.json({ limit: "1mb" }));
 
-  // Basic Security Headers
+  // Security headers. HTTPS/HSTS is enabled only in production.
   app.use((req, res, next) => {
-    res.setHeader('X-Content-Type-Options', 'nosniff');
-    res.setHeader('X-Frame-Options', 'SAMEORIGIN');
-    res.setHeader('X-XSS-Protection', '1; mode=block');
+    res.setHeader("X-Content-Type-Options", "nosniff");
+    res.setHeader("X-Frame-Options", "SAMEORIGIN");
+    res.setHeader("Referrer-Policy", "strict-origin-when-cross-origin");
+    res.setHeader("Permissions-Policy", "camera=(), microphone=(), geolocation=()");
+    res.setHeader("Content-Security-Policy", isProduction
+      ? "default-src 'self'; base-uri 'self'; frame-ancestors 'self'; object-src 'none'; img-src 'self' data: https:; style-src 'self' 'unsafe-inline'; script-src 'self'; connect-src 'self' https:; font-src 'self' data:"
+      : "default-src 'self' 'unsafe-inline' 'unsafe-eval' data: blob: https: http: ws: wss:; base-uri 'self'; frame-ancestors 'self'; object-src 'none'");
+
+    if (isProduction && req.secure) {
+      res.setHeader("Strict-Transport-Security", "max-age=31536000; includeSubDomains");
+    }
+
     next();
   });
 
-  // Health check endpoint
   app.get("/api/health", (_req, res) => {
     res.json({
       status: "ok",
       version: "2.1.0",
       environment: SERVER_CONFIG.NODE_ENV,
-      timestamp: new Date().toISOString()
+      timestamp: new Date().toISOString(),
     });
   });
 
-  // Core API Routes
   app.use("/api/auth", authRouter);
   app.use("/api/entitlements", entitlementRouter);
   app.use("/api/subscriptions", subscriptionRouter);
   app.use("/api/database", databaseRouter);
   app.use("/api", aiRouter);
 
-  // Error handling middleware for API
   app.use(errorHandler);
 
-  // Vite middleware for development / Static files for production
-  if (process.env.NODE_ENV !== "production") {
+  if (!isProduction) {
     const vite = await createViteServer({
       server: { middlewareMode: true },
       appType: "spa",
     });
     app.use(vite.middlewares);
   } else {
-    const distPath = path.join(process.cwd(), 'dist');
+    const distPath = path.join(process.cwd(), "dist");
     app.use(express.static(distPath));
-    app.get('*', (_req, res) => {
-      res.sendFile(path.join(distPath, 'index.html'));
+    app.get("*", (_req, res) => {
+      res.sendFile(path.join(distPath, "index.html"));
     });
   }
 
@@ -65,4 +74,7 @@ async function startServer() {
   });
 }
 
-startServer();
+startServer().catch((error) => {
+  logger.error("Falha fatal ao iniciar o servidor", { error });
+  process.exit(1);
+});
