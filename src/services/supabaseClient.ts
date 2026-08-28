@@ -1,13 +1,9 @@
 import { createClient, SupabaseClient } from '@supabase/supabase-js';
 
-// Default Supabase credentials provided by user or environment
-const DEFAULT_SUPABASE_PROJECT_ID = 'ivnxxXsZ7nIkhSmjl8t2A';
-const DEFAULT_SUPABASE_KEY = 'sb_publishable_1ivnxxXsZ7nIkhSmjl8t2A_tvWn9LeJ';
-
 function sanitizeSupabaseUrl(rawUrl?: string): string {
   const trimmed = (rawUrl || '').trim();
   if (!trimmed) {
-    return `https://${DEFAULT_SUPABASE_PROJECT_ID.toLowerCase()}.supabase.co`;
+    return '';
   }
   if (!trimmed.startsWith('http://') && !trimmed.startsWith('https://')) {
     return `https://${trimmed}`;
@@ -15,14 +11,26 @@ function sanitizeSupabaseUrl(rawUrl?: string): string {
   return trimmed;
 }
 
-const metaEnv = typeof import.meta !== 'undefined' ? (import.meta as unknown as { env?: Record<string, string> }).env : undefined;
+const metaEnv = typeof import.meta !== 'undefined'
+  ? (import.meta as unknown as { env?: Record<string, string> }).env
+  : undefined;
 
 const supabaseUrl = sanitizeSupabaseUrl(metaEnv?.VITE_SUPABASE_URL);
-const supabaseKey = (metaEnv?.VITE_SUPABASE_ANON_KEY || '').trim() || DEFAULT_SUPABASE_KEY;
+const supabaseKey = (metaEnv?.VITE_SUPABASE_ANON_KEY || '').trim();
+
+function assertSupabaseConfig(): void {
+  if (!supabaseUrl || !supabaseKey) {
+    throw new Error(
+      'Supabase não configurado. Defina VITE_SUPABASE_URL e VITE_SUPABASE_ANON_KEY no ambiente do frontend.'
+    );
+  }
+}
 
 let clientInstance: SupabaseClient | null = null;
 
 export function getSupabaseClient(): SupabaseClient {
+  assertSupabaseConfig();
+
   if (!clientInstance) {
     clientInstance = createClient(supabaseUrl, supabaseKey, {
       auth: {
@@ -32,6 +40,7 @@ export function getSupabaseClient(): SupabaseClient {
       },
     });
   }
+
   return clientInstance;
 }
 
@@ -46,13 +55,23 @@ export interface SupabaseConnectionStatus {
 }
 
 /**
- * Verifies Supabase API and Database connectivity
+ * Verifies Supabase API and authentication connectivity.
  */
 export async function testSupabaseConnection(): Promise<SupabaseConnectionStatus> {
   const startTime = Date.now();
+
+  if (!supabaseUrl || !supabaseKey) {
+    return {
+      connected: false,
+      url: supabaseUrl,
+      keyConfigured: false,
+      message: 'Supabase não configurado: defina VITE_SUPABASE_URL e VITE_SUPABASE_ANON_KEY.',
+      latencyMs: Date.now() - startTime,
+    };
+  }
+
   try {
     const client = getSupabaseClient();
-    // Test auth service health check
     const { error } = await client.auth.getSession();
     const latency = Date.now() - startTime;
 
@@ -60,7 +79,7 @@ export async function testSupabaseConnection(): Promise<SupabaseConnectionStatus
       return {
         connected: false,
         url: supabaseUrl,
-        keyConfigured: Boolean(supabaseKey),
+        keyConfigured: true,
         message: `Erro na autenticação da API Supabase: ${error.message}`,
         latencyMs: latency,
       };
@@ -69,8 +88,8 @@ export async function testSupabaseConnection(): Promise<SupabaseConnectionStatus
     return {
       connected: true,
       url: supabaseUrl,
-      keyConfigured: Boolean(supabaseKey),
-      message: 'Conectado com sucesso ao Banco de Dados / API Supabase.',
+      keyConfigured: true,
+      message: 'Conectado com sucesso ao Supabase.',
       latencyMs: latency,
     };
   } catch (err: unknown) {
@@ -78,7 +97,7 @@ export async function testSupabaseConnection(): Promise<SupabaseConnectionStatus
     return {
       connected: false,
       url: supabaseUrl,
-      keyConfigured: Boolean(supabaseKey),
+      keyConfigured: true,
       message: `Não foi possível conectar ao endpoint Supabase: ${errorMsg}`,
       latencyMs: Date.now() - startTime,
     };
