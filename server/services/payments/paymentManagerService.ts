@@ -8,44 +8,51 @@ import { PixPaymentProvider } from './pixPaymentProvider';
 import { StripeGatewayProvider } from './stripePaymentProvider';
 import { subscriptionServerRepository } from '../../repositories/subscriptionServerRepository';
 import { logger } from '../../middlewares/logger';
+import { SERVER_CONFIG } from '../../config/env';
+import { getPaidPlan } from '../../config/plans';
 
 export class PaymentManagerService {
   private pixProvider = new PixPaymentProvider();
   private stripeProvider = new StripeGatewayProvider();
 
   getProvider(method: string): PaymentProvider {
-    if (method === 'pix' || method === 'pix_direct') {
-      return this.pixProvider;
-    }
+    if (method === 'pix' || method === 'pix_direct') return this.pixProvider;
     return this.stripeProvider;
   }
 
   async initiatePayment(input: CreatePaymentInput): Promise<PaymentTransactionResult> {
-    const provider = this.getProvider(input.paymentMethod);
-    return await provider.createPayment(input);
+    if (SERVER_CONFIG.PAYMENT_MODE !== 'mock') {
+      throw new Error('LIVE_PAYMENT_PROVIDER_NOT_IMPLEMENTED');
+    }
+
+    const plan = getPaidPlan(input.planSlug);
+    if (!plan || plan.amountCents !== input.amountCents) {
+      throw new Error('INVALID_SERVER_PRICING');
+    }
+
+    return this.getProvider(input.paymentMethod).createPayment(input);
   }
 
   async checkPaymentStatus(providerName: string, transactionId: string): Promise<PaymentGatewayStatus> {
-    const provider = this.getProvider(providerName);
-    return await provider.getPaymentStatus(transactionId);
+    return this.getProvider(providerName).getPaymentStatus(transactionId);
   }
 
-  /**
-   * Process verified webhook event to upgrade subscription
-   */
   async processVerifiedPayment(
     userId: string,
     transactionId: string,
     providerName: string,
     planSlug: 'PRO' | 'APEX_ELITE' = 'PRO'
   ): Promise<void> {
+    const plan = getPaidPlan(planSlug);
+    if (!plan) throw new Error('INVALID_PLAN');
+
     const now = new Date();
     const periodEnd = new Date(now.getTime() + 30 * 24 * 60 * 60 * 1000).toISOString();
 
     await subscriptionServerRepository.saveSubscription({
       id: `sub_${userId}`,
       userId,
-      planId: planSlug,
+      planId: plan.slug,
       status: 'active',
       provider: providerName as any,
       customerId: `cus_${userId}`,
@@ -55,7 +62,7 @@ export class PaymentManagerService {
       cancelAtPeriodEnd: false,
       createdAt: now.toISOString(),
       updatedAt: now.toISOString(),
-      priceBrl: planSlug === 'APEX_ELITE' ? 120.00 : 15.00,
+      priceBrl: plan.priceBrl,
       lastPaymentDate: now.toISOString(),
     });
 
