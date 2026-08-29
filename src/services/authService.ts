@@ -26,7 +26,7 @@ export const convertAthleteToUserAccount = (athlete: AuthenticatedAthlete): User
     email: athlete.email,
     avatarUrl: athlete.photoURL,
     createdAt: new Date().toISOString(),
-    emailVerified: true,
+    emailVerified: athlete.emailVerified,
     profile: athlete.profile,
   };
 };
