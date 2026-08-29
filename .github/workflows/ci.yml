@@ -11,16 +11,15 @@ jobs:
     runs-on: ubuntu-latest
     env:
       NODE_ENV: test
-      FIREBASE_PROJECT_ID: storied-cable-xn50x
-      FIRESTORE_ALLOW_MEMORY_FALLBACK: false
-      PAYMENT_MODE: mock
+      FIRESTORE_ALLOW_MEMORY_FALLBACK: true
+      RUN_FIRESTORE_CLOUD_TESTS: false
       CORS_ORIGINS: http://localhost:3000
 
     steps:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Setup Node
+      - name: Setup Node 22
         uses: actions/setup-node@v4
         with:
           node-version: 22
