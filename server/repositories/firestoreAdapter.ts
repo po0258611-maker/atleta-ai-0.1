@@ -1,5 +1,6 @@
 import { getAdminFirestore } from '../services/firebaseAdmin';
 import { logger } from '../middlewares/logger';
+import { SERVER_CONFIG } from '../config/env';
 
 export interface FirestoreDocumentSnapshot<T = any> {
   id: string;
@@ -39,9 +40,7 @@ export interface IFirestoreAdapter {
   runTransaction<T>(updateFunction: (transaction: IFirestoreTransaction) => Promise<T>): Promise<T>;
 }
 
-const allowMemoryFallback =
-  process.env.NODE_ENV !== 'production' &&
-  process.env.FIRESTORE_ALLOW_MEMORY_FALLBACK === 'true';
+const allowMemoryFallback = SERVER_CONFIG.FIRESTORE_ALLOW_MEMORY_FALLBACK;
 
 function isFirestoreUnavailableError(err: any): boolean {
   if (!err) return false;
