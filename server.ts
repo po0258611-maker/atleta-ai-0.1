@@ -22,8 +22,8 @@ function applySecurityHeaders(app: express.Express) {
     res.setHeader(
       "Content-Security-Policy",
       isProduction
-        ? "default-src 'self'; base-uri 'self'; frame-ancestors 'self'; object-src 'none'; img-src 'self' data: https: blob:; style-src 'self' 'unsafe-inline'; script-src 'self' 'unsafe-inline'; connect-src 'self' https: wss:; font-src 'self' data: https:"
-        : "default-src 'self' 'unsafe-inline' 'unsafe-eval' data: blob: https: http: ws: wss:; base-uri 'self'; frame-ancestors 'self'; object-src 'none'"
+        ? "default-src 'self'; base-uri 'self'; frame-ancestors 'self' https://aistudio.google.com https://*.aistudio.google.com https://ai.studio https://*.googleusercontent.com; object-src 'none'; img-src 'self' data: https: blob:; style-src 'self' 'unsafe-inline'; script-src 'self' 'unsafe-inline'; connect-src 'self' https: wss:; font-src 'self' data: https:"
+        : "default-src 'self' 'unsafe-inline' 'unsafe-eval' data: blob: https: http: ws: wss:; base-uri 'self'; frame-ancestors 'self' https://aistudio.google.com https://*.aistudio.google.com https://ai.studio https://*.googleusercontent.com; object-src 'none'"
     );
     if (isProduction && (_req.secure || _req.headers["x-forwarded-proto"] === "https")) {
       res.setHeader("Strict-Transport-Security", "max-age=31536000; includeSubDomains");
@@ -39,7 +39,8 @@ function applyCors(app: express.Express) {
     if (!origin) return next();
     const host = req.headers.host;
     const isSameOrigin = Boolean(host && (origin === `http://${host}` || origin === `https://${host}`));
-    const isAllowed = allowedOrigins.has(origin) || isSameOrigin;
+    const isAiStudioOrigin = /^https:\/\/(?:[^.]+\.)?(?:aistudio\.google\.com|ai\.studio|googleusercontent\.com)$/.test(origin);
+    const isAllowed = allowedOrigins.has(origin) || isSameOrigin || isAiStudioOrigin;
     if (!isAllowed) {
       return res.status(403).json({ error: { code: "CORS_ORIGIN_DENIED", message: "Origem não autorizada." } });
     }
