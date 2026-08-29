@@ -3,21 +3,20 @@ import {
   getAuth,
   signInWithPopup,
   GoogleAuthProvider,
-  onAuthStateChanged,
+  onIdTokenChanged,
   User,
   signOut,
 } from 'firebase/auth';
 import firebaseConfig from '../../firebase-applet-config.json';
 import { UserProfile } from '../types';
 
-// Initialize Firebase App instance
 const app = getApps().length > 0 ? getApp() : initializeApp(firebaseConfig);
 export const auth = getAuth(app);
 
 const googleProvider = new GoogleAuthProvider();
-googleProvider.setCustomParameters({
-  prompt: 'select_account',
-});
+googleProvider.setCustomParameters({ prompt: 'select_account' });
+
+auth.useDeviceLanguage();
 
 export type AuthState = 'loading' | 'authenticated' | 'unauthenticated' | 'error';
 
@@ -48,25 +47,30 @@ const DEFAULT_ATHLETE_PROFILE: UserProfile = {
   stressLevel: 'moderate',
 };
 
-// In-memory token cache for request Authorization headers
 let currentIdToken: string | null = null;
 let currentAthlete: AuthenticatedAthlete | null = null;
 
 export const getIdToken = (): string | null => currentIdToken;
 export const getAuthenticatedAthlete = (): AuthenticatedAthlete | null => currentAthlete;
 
-/**
- * Builds standard AuthenticatedAthlete from Firebase User & fresh ID Token
- */
-export const buildAthleteFromFirebaseUser = async (user: User): Promise<AuthenticatedAthlete> => {
-  const token = await user.getIdToken(true);
-  currentIdToken = token;
+/** Returns a fresh Firebase ID token for authenticated API requests. */
+export const getFreshIdToken = async (): Promise<string | null> => {
+  const user = auth.currentUser;
+  if (!user) return null;
 
-  // Derive initial or personalized profile based on Firebase Google Account
-  const profile: UserProfile = {
-    ...DEFAULT_ATHLETE_PROFILE,
-    name: user.displayName || 'Atleta Google',
-  };
+  const token = await user.getIdToken();
+  currentIdToken = token;
+  return token;
+};
+
+const buildProfileFromFirebaseUser = (user: User): UserProfile => ({
+  ...DEFAULT_ATHLETE_PROFILE,
+  name: user.displayName || 'Atleta Google',
+});
+
+export const buildAthleteFromFirebaseUser = async (user: User): Promise<AuthenticatedAthlete> => {
+  const token = await user.getIdToken();
+  currentIdToken = token;
 
   const athlete: AuthenticatedAthlete = {
     uid: user.uid,
@@ -74,34 +78,21 @@ export const buildAthleteFromFirebaseUser = async (user: User): Promise<Authenti
     displayName: user.displayName || 'Atleta Google',
     photoURL: user.photoURL || undefined,
     idToken: token,
-    profile,
+    profile: buildProfileFromFirebaseUser(user),
   };
 
   currentAthlete = athlete;
   return athlete;
 };
 
-/**
- * Firebase Real Google Sign-In with Popup
- */
 export const signInWithGoogle = async (): Promise<AuthenticatedAthlete> => {
-  try {
-    const result = await signInWithPopup(auth, googleProvider);
-    return await buildAthleteFromFirebaseUser(result.user);
-  } catch (error: any) {
-    console.error('Erro na autenticação com Google (Firebase):', error);
-    throw error;
-  }
+  const result = await signInWithPopup(auth, googleProvider);
+  return buildAthleteFromFirebaseUser(result.user);
 };
 
-/**
- * Real Firebase Sign Out
- */
 export const signOutFromFirebase = async (): Promise<void> => {
   try {
     await signOut(auth);
-  } catch (error) {
-    console.error('Erro ao desconectar do Firebase:', error);
   } finally {
     currentIdToken = null;
     currentAthlete = null;
@@ -109,30 +100,35 @@ export const signOutFromFirebase = async (): Promise<void> => {
 };
 
 /**
- * Listens to Real-time Firebase Authentication state changes & auto-restores session
+ * Observes both sign-in state and token refreshes. This prevents API calls from
+ * continuing to use an expired Firebase ID token after automatic refresh.
  */
 export const subscribeToAuthState = (
   onStateChange: (state: AuthState, athlete: AuthenticatedAthlete | null, error?: Error) => void
 ) => {
-  return onAuthStateChanged(
+  return onIdTokenChanged(
     auth,
     async (firebaseUser) => {
-      if (firebaseUser) {
-        try {
-          const athlete = await buildAthleteFromFirebaseUser(firebaseUser);
-          onStateChange('authenticated', athlete);
-        } catch (err: any) {
-          console.error('Erro ao obter token do usuário Firebase:', err);
-          onStateChange('error', null, err);
-        }
-      } else {
+      if (!firebaseUser) {
         currentIdToken = null;
         currentAthlete = null;
         onStateChange('unauthenticated', null);
+        return;
+      }
+
+      try {
+        const athlete = await buildAthleteFromFirebaseUser(firebaseUser);
+        onStateChange('authenticated', athlete);
+      } catch (error: unknown) {
+        currentIdToken = null;
+        currentAthlete = null;
+        const normalized = error instanceof Error ? error : new Error('Erro ao obter token do Firebase.');
+        onStateChange('error', null, normalized);
       }
     },
     (error) => {
-      console.error('Erro no observador de autenticação Firebase:', error);
+      currentIdToken = null;
+      currentAthlete = null;
       onStateChange('error', null, error);
     }
   );
