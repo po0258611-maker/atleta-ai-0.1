@@ -12,11 +12,9 @@ export function getFirebaseAdmin(): App {
     if (existingApps.length > 0 && existingApps[0]) {
       adminApp = existingApps[0];
     } else {
-      const projectId = process.env.FIREBASE_PROJECT_ID?.trim();
-
-      if (!projectId) {
-        throw new Error('FIREBASE_PROJECT_ID is required to initialize Firebase Admin SDK.');
-      }
+      const projectId =
+        process.env.FIREBASE_PROJECT_ID?.trim() ||
+        'storied-cable-xn50x';
 
       try {
         // Credentials are resolved by the runtime (ADC/service account).

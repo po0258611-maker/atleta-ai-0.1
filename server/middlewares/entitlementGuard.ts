@@ -5,7 +5,7 @@ import { FeatureKey } from '../domain/planDefinitions';
 export function requireEntitlement(feature: FeatureKey) {
   return async (req: Request, res: Response, next: NextFunction) => {
     // If no user context, fallback to anonymous demo user or block
-    const userId = req.user?.id || 'usr_anonymous_demo';
+    const userId = req.athlete?.uid || 'usr_anonymous_demo';
 
     try {
       const evaluation = await entitlementService.consumeFeature(userId, feature);

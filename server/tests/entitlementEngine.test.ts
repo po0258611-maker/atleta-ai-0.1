@@ -10,7 +10,6 @@
  * 7. User without subscription fallback
  */
 
-import { authService } from '../services/authService';
 import { entitlementService } from '../services/entitlementService';
 import { subscriptionServerRepository } from '../repositories/subscriptionServerRepository';
 import { usageRepository } from '../repositories/usageRepository';
@@ -21,25 +20,20 @@ setFirestoreAdapter(new MemoryFirestoreAdapter());
 async function runTests() {
   console.log('--- INICIANDO TESTES DO MOTOR DE IDENTIDADE E ENTITLEMENTS ---');
 
-  // Test 1: Register and Login
-  const testEmail = `atleta_${Date.now()}@test.com`;
-  const registerResult = await authService.register(testEmail, 'Atleta Teste', 'segredo123', '127.0.0.1', 'NodeTest');
-  console.assert(registerResult.token.length > 20, 'Token de sessão gerado com sucesso');
-  console.assert(registerResult.user.email === testEmail, 'E-mail normalizado corretamente');
-  console.log('✓ Teste 1: Cadastro e Sessão Criptográfica');
+  // Test 1: Identity Resolution for Athlete
+  const testUserId = `atleta_${Date.now()}`;
+  const planInfo = await entitlementService.resolveUserPlan(testUserId);
+  console.assert(planInfo.plan.slug === 'FREE', 'Novo usuário resolve automaticamente para plano FREE');
+  console.log('✓ Teste 1: Resolução de Identidade e Plano Padrão');
 
-  // Test 2: Login with correct and incorrect password
-  const loginSuccess = await authService.login(testEmail, 'segredo123', '127.0.0.1', 'NodeTest');
-  console.assert(loginSuccess.user.id === registerResult.user.id, 'Login efetuado com sucesso');
-  try {
-    await authService.login(testEmail, 'senha_errada', '127.0.0.1', 'NodeTest');
-    console.error('ERRO: Não deveria logar com senha errada');
-  } catch {
-    console.log('✓ Teste 2: Rejeição segura de credencial incorreta');
-  }
+  // Test 2: Entitlement Check for Free Tier Initial State
+  const initialQuota = await entitlementService.evaluateAccess(testUserId, 'AI_COACH_MESSAGES');
+  console.assert(initialQuota.granted === true, 'Acesso inicial concedido');
+  console.assert(initialQuota.remaining === 10, 'Quota inicial de 10 mensagens');
+  console.log('✓ Teste 2: Validação de Entitlements no Plano FREE');
 
   // Test 3: Free Normal Usage (AI_COACH_MESSAGES limit = 10)
-  const freeUserId = registerResult.user.id;
+  const freeUserId = testUserId;
   await usageRepository.resetUsage(freeUserId, 'AI_COACH_MESSAGES');
   
   const evalInitial = await entitlementService.evaluateAccess(freeUserId, 'AI_COACH_MESSAGES');

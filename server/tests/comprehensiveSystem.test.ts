@@ -19,9 +19,8 @@ import {
 } from '../../src/engine/workoutEngine';
 import { ProgressionEngine } from '../../src/services/progressionEngine';
 import { AISecurityGuard } from '../services/aiSecurityGuard';
-import { AuthService } from '../services/authService';
-import { userRepository } from '../repositories/userRepository';
-import { sessionRepository } from '../repositories/sessionRepository';
+import { requireAuth } from '../middlewares/auth';
+import { requireRole } from '../middlewares/authorization';
 import { subscriptionRepository } from '../repositories/subscriptionRepository';
 import { subscriptionServerRepository } from '../repositories/subscriptionServerRepository';
 import { entitlementService } from '../services/entitlementService';
@@ -29,6 +28,23 @@ import { PaymentWebhookService } from '../services/paymentWebhookService';
 import { WebhookSignatureVerifier } from '../services/payments/webhookSignatureVerifier';
 import { setFirestoreAdapter, MemoryFirestoreAdapter } from '../repositories/firestoreAdapter';
 import { UserProfile, Exercise, SetLog } from '../../src/types';
+import type { Request, Response, NextFunction } from 'express';
+
+setFirestoreAdapter(new MemoryFirestoreAdapter());
+
+function createMockResponse() {
+  const res: Partial<Response> = {};
+  res.statusCode = 200;
+  res.status = function (code: number) {
+    this.statusCode = code;
+    return this as Response;
+  };
+  res.json = function (data: any) {
+    (this as any).data = data;
+    return this as Response;
+  };
+  return res as Response & { statusCode: number; data: any };
+}
 
 setFirestoreAdapter(new MemoryFirestoreAdapter());
 
@@ -196,52 +212,48 @@ async function runComprehensiveAutomatedTests() {
   }
 
   // =========================================================================
-  // 3. AUTH & REPOSITORY TESTS
+  // 3. AUTH & REPOSITORY TESTS (Firebase Bearer Auth & RBAC)
   // =========================================================================
-  console.log('\n--- 3. TESTES: AUTH & REPOSITORIES (Cadastro, Login, Falha e Sessões) ---');
+  console.log('\n--- 3. TESTES: AUTH & REPOSITORIES (Firebase Auth, RBAC e Tokens) ---');
 
-  const authService = new AuthService();
-  const testEmail = `atleta_${Date.now()}@teste.com`;
-  const testPassword = 'senhaSegura123';
+  const testUserId = `usr_test_${Date.now()}`;
 
-  // 3.1 Register Happy Path
+  // 3.1 Auth Middleware: Reject missing token
   {
-    const res = await authService.register(testEmail, 'Atleta Teste', testPassword, '127.0.0.1', 'JestTest');
-    assertTest(res.user.email === testEmail, 'Auth: Cadastro com e-mail e senha válidos');
-    assertTest(typeof res.token === 'string' && res.token.length > 20, 'Auth: Token de sessão emitido');
+    const req = { headers: {}, path: '/api/ai-coach', ip: '127.0.0.1' } as unknown as Request;
+    const res = createMockResponse();
+    let nextCalled = false;
+    await requireAuth(req, res, () => { nextCalled = true; });
+    assertTest(res.statusCode === 401 && !nextCalled, 'Auth: Rejeita requisição sem Bearer token');
   }
 
-  // 3.2 Duplicate Registration Prevention
+  // 3.2 Auth Middleware: Reject invalid token
   {
-    let threw = false;
-    try {
-      await authService.register(testEmail, 'Atleta Duplicado', testPassword, '127.0.0.1', 'JestTest');
-    } catch {
-      threw = true;
-    }
-    assertTest(threw, 'Auth: Impede cadastro com e-mail já existente');
+    const req = { headers: { authorization: 'Bearer token_invalido_teste' }, path: '/api/ai-coach', ip: '127.0.0.1' } as unknown as Request;
+    const res = createMockResponse();
+    let nextCalled = false;
+    await requireAuth(req, res, () => { nextCalled = true; });
+    assertTest(res.statusCode === 401 && !nextCalled, 'Auth: Rejeita Bearer token inválido');
   }
 
-  // 3.3 Invalid Credentials (Wrong Password)
+  // 3.3 RBAC Middleware: Role authorization check
   {
-    let threw = false;
-    try {
-      await authService.login(testEmail, 'senhaErrada', '127.0.0.1', 'JestTest');
-    } catch {
-      threw = true;
-    }
-    assertTest(threw, 'Auth: Rejeita login com senha incorreta');
+    const req = { athlete: { uid: testUserId, role: 'ATHLETE' } } as unknown as Request;
+    const res = createMockResponse();
+    let nextCalled = false;
+    const guard = requireRole(['ADMIN']);
+    guard(req, res, () => { nextCalled = true; });
+    assertTest(res.statusCode === 403 && !nextCalled, 'Auth: RBAC bloqueia atleta em rota exclusiva de administrador');
   }
 
-  // 3.4 Missing credentials
+  // 3.4 RBAC Middleware: Role authorization pass
   {
-    let threw = false;
-    try {
-      await authService.register('', '', '', '127.0.0.1', 'JestTest');
-    } catch {
-      threw = true;
-    }
-    assertTest(threw, 'Auth: Rejeita dados de cadastro faltantes');
+    const req = { athlete: { uid: testUserId, role: 'ATHLETE' } } as unknown as Request;
+    const res = createMockResponse();
+    let nextCalled = false;
+    const guard = requireRole(['ATHLETE']);
+    guard(req, res, () => { nextCalled = true; });
+    assertTest(res.statusCode === 200 && nextCalled, 'Auth: RBAC autoriza atleta em rota com papel ATHLETE');
   }
 
   // =========================================================================
@@ -251,48 +263,41 @@ async function runComprehensiveAutomatedTests() {
 
   // 4.1 Free Tier (No Subscription)
   {
-    const freeUser = await userRepository.findByEmail(testEmail);
-    if (freeUser) {
-      const accessAi = await entitlementService.evaluateAccess(freeUser.id, 'AI_COACH_MESSAGES');
-      assertTest(accessAi.granted === true, 'Subscription: Free tem cota inicial de mensagens com IA');
-      assertTest(accessAi.limit === 10, 'Subscription: Free limitado a 10 interações mensais');
+    const accessAi = await entitlementService.evaluateAccess(testUserId, 'AI_COACH_MESSAGES');
+    assertTest(accessAi.granted === true, 'Subscription: Free tem cota inicial de mensagens com IA');
+    assertTest(accessAi.limit === 10, 'Subscription: Free limitado a 10 interações mensais');
 
-      const accessAdvanced = await entitlementService.evaluateAccess(freeUser.id, 'ADVANCED_PERIODIZATION');
-      assertTest(accessAdvanced.granted === false, 'Subscription: Free bloqueado em periodização avançada');
-    }
+    const accessAdvanced = await entitlementService.evaluateAccess(testUserId, 'ADVANCED_PERIODIZATION');
+    assertTest(accessAdvanced.granted === false, 'Subscription: Free bloqueado em periodização avançada');
   }
 
   // 4.2 Upgrade to Pro Monthly
   {
-    const freeUser = await userRepository.findByEmail(testEmail);
-    if (freeUser) {
-      const now = new Date();
-      const future = new Date(now.getTime() + 30 * 24 * 60 * 60 * 1000);
+    const now = new Date();
+    const future = new Date(now.getTime() + 30 * 24 * 60 * 60 * 1000);
 
-      await subscriptionServerRepository.saveSubscription({
-        id: `sub_${Date.now()}`,
-        userId: freeUser.id,
-        planId: 'PRO',
-        status: 'active',
-        provider: 'stripe',
-        customerId: 'cus_test_123',
-        subscriptionId: 'sub_test_123',
-        currentPeriodStart: now.toISOString(),
-        currentPeriodEnd: future.toISOString(),
-        cancelAtPeriodEnd: false,
-        createdAt: now.toISOString(),
-        updatedAt: now.toISOString(),
-        priceBrl: 39.90,
-      });
+    await subscriptionServerRepository.saveSubscription({
+      id: `sub_${Date.now()}`,
+      userId: testUserId,
+      planId: 'PRO',
+      status: 'active',
+      provider: 'stripe',
+      customerId: 'cus_test_123',
+      subscriptionId: 'sub_test_123',
+      currentPeriodStart: now.toISOString(),
+      currentPeriodEnd: future.toISOString(),
+      cancelAtPeriodEnd: false,
+      createdAt: now.toISOString(),
+      updatedAt: now.toISOString(),
+      priceBrl: 39.90,
+    });
 
-      const { plan, status } = await entitlementService.resolveUserPlan(freeUser.id);
-      assertTest(status === 'ACTIVE', 'Subscription: Status da assinatura ativado com sucesso');
-      assertTest(plan.slug === 'PRO', 'Subscription: Plano resolvido como PRO no servidor');
+    const { plan, status } = await entitlementService.resolveUserPlan(testUserId);
+    assertTest(status === 'ACTIVE', 'Subscription: Status da assinatura ativado com sucesso');
+    assertTest(plan.slug === 'PRO', 'Subscription: Plano resolvido como PRO no servidor');
 
-
-      const accessAdvanced = await entitlementService.evaluateAccess(freeUser.id, 'ADVANCED_PERIODIZATION');
-      assertTest(accessAdvanced.granted === true, 'Subscription: Usuário PRO tem acesso concedido à periodização avançada ilimitada');
-    }
+    const accessAdvanced = await entitlementService.evaluateAccess(testUserId, 'ADVANCED_PERIODIZATION');
+    assertTest(accessAdvanced.granted === true, 'Subscription: Usuário PRO tem acesso concedido à periodização avançada ilimitada');
   }
 
   // =========================================================================
@@ -304,71 +309,65 @@ async function runComprehensiveAutomatedTests() {
 
   // 5.1 Payment Succeeded Webhook
   {
-    const user = await userRepository.findByEmail(testEmail);
-    if (user) {
-      const eventId = `evt_${Date.now()}`;
-      const payload = {
-        provider: 'stripe' as const,
-        eventId,
-        eventType: 'invoice.payment_succeeded',
-        data: {
-          customerId: 'cus_test_123',
-          subscriptionId: 'sub_test_123',
-          userId: user.id,
-          status: 'active',
-          planId: 'PRO' as const,
-          currentPeriodStart: new Date().toISOString(),
-          currentPeriodEnd: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString(),
-          amountCents: 3990,
-        },
-      };
+    const eventId = `evt_${Date.now()}`;
+    const payload = {
+      provider: 'stripe' as const,
+      eventId,
+      eventType: 'invoice.payment_succeeded',
+      data: {
+        customerId: 'cus_test_123',
+        subscriptionId: 'sub_test_123',
+        userId: testUserId,
+        status: 'active',
+        planId: 'PRO' as const,
+        currentPeriodStart: new Date().toISOString(),
+        currentPeriodEnd: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString(),
+        amountCents: 3990,
+      },
+    };
 
-      const rawPayload = JSON.stringify(payload);
-      const signature = WebhookSignatureVerifier.generateStripeSignature(rawPayload);
+    const rawPayload = JSON.stringify(payload);
+    const signature = WebhookSignatureVerifier.generateStripeSignature(rawPayload);
 
-      const handled = await webhookService.handleWebhook({
-        payload,
-        rawPayload,
-        signatureHeader: signature,
-      });
-      assertTest(handled.processed === true, 'Payments: Webhook de pagamento confirmado processado com sucesso');
+    const handled = await webhookService.handleWebhook({
+      payload,
+      rawPayload,
+      signatureHeader: signature,
+    });
+    assertTest(handled.processed === true, 'Payments: Webhook de pagamento confirmado processado com sucesso');
 
-      // Idempotency check: sending exact same eventId should not duplicate
-      const duplicateHandled = await webhookService.handleWebhook({
-        payload,
-        rawPayload,
-        signatureHeader: signature,
-      });
-      assertTest(duplicateHandled.reason === 'ALREADY_PROCESSED', 'Payments: Idempotência ativa rejeitou duplicata');
-    }
+    // Idempotency check: sending exact same eventId should not duplicate
+    const duplicateHandled = await webhookService.handleWebhook({
+      payload,
+      rawPayload,
+      signatureHeader: signature,
+    });
+    assertTest(duplicateHandled.reason === 'ALREADY_PROCESSED', 'Payments: Idempotência ativa rejeitou duplicata');
   }
 
   // 5.2 Payment Failed Webhook
   {
-    const user = await userRepository.findByEmail(testEmail);
-    if (user) {
-      const payload = {
-        provider: 'stripe' as const,
-        eventId: `evt_fail_${Date.now()}`,
-        eventType: 'invoice.payment_failed',
-        data: {
-          customerId: 'cus_test_123',
-          subscriptionId: 'sub_test_123',
-          userId: user.id,
-          status: 'past_due',
-        },
-      };
+    const payload = {
+      provider: 'stripe' as const,
+      eventId: `evt_fail_${Date.now()}`,
+      eventType: 'invoice.payment_failed',
+      data: {
+        customerId: 'cus_test_123',
+        subscriptionId: 'sub_test_123',
+        userId: testUserId,
+        status: 'past_due',
+      },
+    };
 
-      const rawPayload = JSON.stringify(payload);
-      const signature = WebhookSignatureVerifier.generateStripeSignature(rawPayload);
+    const rawPayload = JSON.stringify(payload);
+    const signature = WebhookSignatureVerifier.generateStripeSignature(rawPayload);
 
-      const handled = await webhookService.handleWebhook({
-        payload,
-        rawPayload,
-        signatureHeader: signature,
-      });
-      assertTest(handled.processed === true, 'Payments: Webhook de falha de pagamento tratado sem crash');
-    }
+    const handled = await webhookService.handleWebhook({
+      payload,
+      rawPayload,
+      signatureHeader: signature,
+    });
+    assertTest(handled.processed === true, 'Payments: Webhook de falha de pagamento tratado sem crash');
   }
 
   // =========================================================================

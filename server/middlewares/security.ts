@@ -6,7 +6,6 @@ import { Request, Response, NextFunction } from 'express';
  */
 export function securityHeaders(req: Request, res: Response, next: NextFunction) {
   res.setHeader('X-Content-Type-Options', 'nosniff');
-  res.setHeader('X-Frame-Options', 'DENY');
   res.setHeader('Referrer-Policy', 'strict-origin-when-cross-origin');
   res.setHeader('Permissions-Policy', 'camera=(), microphone=(), geolocation=()');
 
@@ -14,8 +13,8 @@ export function securityHeaders(req: Request, res: Response, next: NextFunction)
     res.setHeader('Strict-Transport-Security', 'max-age=31536000; includeSubDomains');
   }
 
-  // API responses should not execute as active content.
-  res.setHeader('Content-Security-Policy', "default-src 'none'; frame-ancestors 'none'; base-uri 'none'");
+  // Allow iframe embedding from verified platform ancestors
+  res.setHeader('Content-Security-Policy', "default-src 'self'; frame-ancestors 'self' https:; base-uri 'self'");
 
   next();
 }

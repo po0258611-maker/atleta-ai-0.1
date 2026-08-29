@@ -10,6 +10,7 @@ import {
   StructuredDietPlan 
 } from '../engine/dietEngine';
 import { generateFullBodyWorkout } from '../engine/workoutEngine';
+import { askAICoach } from '../engine/aiCoachEngine';
 import { exportPlanToPDF } from '../services/pdfExporter';
 import { 
   Apple, 
@@ -112,30 +113,12 @@ export const FlexibleDietView: React.FC<FlexibleDietViewProps> = ({ userProfile,
     setAiResponse(null);
 
     try {
-      const res = await fetch('/api/ai-coach', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          prompt: promptToSend,
-          context: {
-            goal,
-            preference,
-            targetCalories: metrics.targetCalories,
-            proteinGrams: metrics.proteinGrams,
-            carbGrams: metrics.carbGrams,
-            fatGrams: metrics.fatGrams,
-          },
-          profile: userProfile,
-        }),
-      });
-
-      const data = await res.json();
-      if (data.text) {
-        setAiResponse(data.text);
-      } else {
-        setAiResponse('Não foi possível gerar uma resposta no momento. Tente novamente.');
-      }
-    } catch (err) {
+      const responseText = await askAICoach(
+        `${promptToSend} (Contexto Dieta Flexível: Meta=${goal}, Preferência=${preference}, MetaCalorias=${metrics.targetCalories}kcal, Proteína=${metrics.proteinGrams}g, Carboidrato=${metrics.carbGrams}g, Gordura=${metrics.fatGrams}g)`,
+        userProfile
+      );
+      setAiResponse(responseText || 'Não foi possível gerar uma resposta no momento. Tente novamente.');
+    } catch {
       setAiResponse('Erro ao conectar com o AI Nutri-Coach. Verifique sua conexão.');
     } finally {
       setIsLoadingAi(false);
