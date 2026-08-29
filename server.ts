@@ -2,7 +2,6 @@ import "dotenv/config";
 import express from "express";
 import fs from "fs";
 import path from "path";
-import { createServer as createViteServer } from "vite";
 import { authRouter } from "./server/routes/authRoutes";
 import { aiRouter } from "./server/routes/aiRoutes";
 import { entitlementRouter } from "./server/routes/entitlementRoutes";
@@ -11,6 +10,7 @@ import { databaseRouter } from "./server/routes/databaseRoutes";
 import { errorHandler } from "./server/middlewares/errorHandler";
 import { logger } from "./server/middlewares/logger";
 import { SERVER_CONFIG } from "./server/config/env";
+import { getFirestoreAdapter } from "./server/repositories/firestoreAdapter";
 
 function applySecurityHeaders(app: express.Express) {
   const isProduction = SERVER_CONFIG.NODE_ENV === "production";
@@ -36,6 +36,23 @@ function applySecurityHeaders(app: express.Express) {
   });
 }
 
+function isTrustedAiStudioOrigin(originStr: string): boolean {
+  try {
+    const url = new URL(originStr);
+    const host = url.hostname.toLowerCase();
+    return (
+      host === "localhost" ||
+      host === "127.0.0.1" ||
+      host.endsWith(".run.app") ||
+      host.endsWith(".ai.studio") ||
+      host.endsWith(".aistudio.google.com") ||
+      host.endsWith(".google.com")
+    );
+  } catch {
+    return false;
+  }
+}
+
 function applyCors(app: express.Express) {
   const allowedOrigins = new Set(SERVER_CONFIG.CORS_ORIGINS);
 
@@ -46,8 +63,16 @@ function applyCors(app: express.Express) {
       return next();
     }
 
+    const host = req.headers.host;
+    const isSameOrigin = Boolean(host && (origin === `http://${host}` || origin === `https://${host}`));
+    const isAllowed =
+      allowedOrigins.has("*") ||
+      allowedOrigins.has(origin) ||
+      isSameOrigin ||
+      isTrustedAiStudioOrigin(origin);
+
     // An explicit allow-list is required for cross-origin browser requests.
-    if (!allowedOrigins.has(origin)) {
+    if (!isAllowed) {
       if (req.method === "OPTIONS") {
         return res.status(403).json({
           error: { code: "CORS_ORIGIN_DENIED", message: "Origem não autorizada." },
@@ -105,6 +130,41 @@ async function startServer() {
     });
   });
 
+  // Readiness: verifies essential system dependencies needed for operation.
+  app.get("/api/ready", (_req, res) => {
+    const isProd = SERVER_CONFIG.NODE_ENV === "production";
+    const dbAdapter = getFirestoreAdapter();
+    const hasDb = Boolean(dbAdapter);
+    let buildArtifactReady = true;
+
+    if (isProd) {
+      buildArtifactReady = fs.existsSync(path.join(process.cwd(), "dist", "index.html"));
+    }
+
+    const ready = hasDb && buildArtifactReady;
+
+    if (!ready) {
+      return res.status(503).json({
+        status: "not_ready",
+        checks: {
+          database: hasDb,
+          buildArtifacts: buildArtifactReady,
+        },
+        timestamp: new Date().toISOString(),
+      });
+    }
+
+    return res.status(200).json({
+      status: "ready",
+      version: "2.1.0",
+      checks: {
+        database: hasDb,
+        buildArtifacts: buildArtifactReady,
+      },
+      timestamp: new Date().toISOString(),
+    });
+  });
+
   app.use("/api/auth", authRouter);
   app.use("/api/entitlements", entitlementRouter);
   app.use("/api/subscriptions", subscriptionRouter);
@@ -114,18 +174,22 @@ async function startServer() {
   app.use(errorHandler);
 
   if (!isProduction) {
+    const { createServer: createViteServer } = await import("vite");
     const vite = await createViteServer({
       server: { middlewareMode: true },
       appType: "spa",
     });
     app.use(vite.middlewares);
   } else {
-    const distPath = fs.existsSync(path.join(process.cwd(), "dist"))
-      ? path.join(process.cwd(), "dist")
-      : path.resolve(__dirname);
+    const distPath = path.join(process.cwd(), "dist");
+    const indexPath = path.join(distPath, "index.html");
+    if (!fs.existsSync(indexPath)) {
+      logger.error(`Artefato de produção ausente: ${indexPath}`);
+      throw new Error(`Artefato de produção não encontrado em ${indexPath}. Execute 'npm run build' primeiro.`);
+    }
     app.use(express.static(distPath));
     app.get("*", (_req, res) => {
-      res.sendFile(path.join(distPath, "index.html"));
+      res.sendFile(indexPath);
     });
   }
 

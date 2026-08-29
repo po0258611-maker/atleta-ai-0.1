@@ -1,7 +1,9 @@
 const NODE_ENV = process.env.NODE_ENV?.trim() || 'development';
 const isProduction = NODE_ENV === 'production';
 
-const defaultOrigins = isProduction ? [] : ['http://localhost:3000'];
+const defaultOrigins = isProduction
+  ? ['https://ai.studio', 'https://aistudio.google.com']
+  : ['http://localhost:3000', 'https://ai.studio', 'https://aistudio.google.com'];
 const corsOrigins = (process.env.CORS_ORIGINS ? process.env.CORS_ORIGINS.split(',') : defaultOrigins)
   .map((s) => s.trim())
   .filter(Boolean);
@@ -12,7 +14,7 @@ export const SERVER_CONFIG = {
   PORT: 3000,
   NODE_ENV,
   CORS_ORIGINS: corsOrigins,
-  GEMINI_MODEL: process.env.GEMINI_MODEL?.trim() || 'gemini-2.5-flash',
+  GEMINI_MODEL: process.env.GEMINI_MODEL?.trim() || 'gemini-3.6-flash',
   GEMINI_API_KEY: process.env.GEMINI_API_KEY?.trim() || '',
   SUPABASE_URL: process.env.SUPABASE_URL?.trim() || '',
   SUPABASE_ANON_KEY: process.env.SUPABASE_ANON_KEY?.trim() || '',

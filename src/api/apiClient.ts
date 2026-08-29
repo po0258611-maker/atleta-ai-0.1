@@ -29,15 +29,31 @@ export async function apiRequest<T>(endpoint: string, options: RequestInit = {})
 
   if (!response.ok) {
     let errorMsg = 'Erro na comunicação com o servidor.';
+    let errorCode = response.status === 429 ? 'RATE_LIMIT_EXCEEDED' : 'API_ERROR';
+    let retryAfter = 0;
+
+    const headerRetryAfter = response.headers.get('Retry-After');
+    if (headerRetryAfter) {
+      const parsed = parseInt(headerRetryAfter, 10);
+      if (!isNaN(parsed)) retryAfter = parsed;
+    }
+
     try {
       const errorJson = await response.json();
       if (errorJson?.error?.message) errorMsg = errorJson.error.message;
+      if (errorJson?.error?.code) errorCode = errorJson.error.code;
+      if (errorJson?.retryAfter || errorJson?.error?.retryAfter) {
+        retryAfter = errorJson.retryAfter || errorJson.error.retryAfter;
+      }
     } catch {
       // Keep generic message when the response is not JSON.
     }
 
     const error = new Error(errorMsg);
-    (error as Error & { status?: number; code?: string }).status = response.status;
+    const errObj = error as Error & { status?: number; code?: string; retryAfter?: number };
+    errObj.status = response.status;
+    errObj.code = errorCode;
+    errObj.retryAfter = retryAfter;
     return Promise.reject(error);
   }
 

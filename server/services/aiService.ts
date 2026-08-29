@@ -171,6 +171,73 @@ Em relação à sua dúvida:
 Como posso aprofundar a orientação sobre exercícios específicos, ajustes de carga ou divisão de macronutrientes?`;
 }
 
+export function isRateLimitError(err: any): boolean {
+  if (!err) return false;
+  const status = err.status || err.statusCode || err.code;
+  if (status === 429 || status === '429') return true;
+  const msg = String(err.message || '').toLowerCase();
+  return (
+    msg.includes('429') ||
+    msg.includes('rate limit') ||
+    msg.includes('resource_exhausted') ||
+    msg.includes('quota exceeded') ||
+    msg.includes('too many requests')
+  );
+}
+
+function isTransientError(err: any): boolean {
+  if (!err) return false;
+  const status = Number(err.status || err.statusCode);
+  return status >= 500 && status < 600;
+}
+
+export async function callGeminiWithBackoff<T>(
+  apiCall: () => Promise<T>,
+  maxAttempts = 3,
+  initialDelayMs = 500
+): Promise<T> {
+  let attempt = 0;
+  while (attempt < maxAttempts) {
+    attempt++;
+    try {
+      return await apiCall();
+    } catch (err: any) {
+      const isRateLimit = isRateLimitError(err);
+      const isLastAttempt = attempt >= maxAttempts;
+
+      if (isRateLimit || isTransientError(err)) {
+        if (!isLastAttempt) {
+          const jitter = Math.floor(Math.random() * 200);
+          const delayMs = initialDelayMs * Math.pow(2, attempt - 1) + jitter;
+          logger.warn('Gemini API rate limit or transient error encountered, applying exponential backoff', {
+            attempt,
+            maxAttempts,
+            delayMs,
+            provider: 'gemini',
+            model: SERVER_CONFIG.GEMINI_MODEL,
+            error: err.message,
+            timestamp: new Date().toISOString(),
+          });
+          await new Promise((resolve) => setTimeout(resolve, delayMs));
+          continue;
+        }
+      }
+
+      logger.error('Gemini API request failed after exponential backoff or non-retryable error', {
+        attempt,
+        maxAttempts,
+        provider: 'gemini',
+        status: isRateLimit ? 429 : 500,
+        model: SERVER_CONFIG.GEMINI_MODEL,
+        error: err.message,
+        timestamp: new Date().toISOString(),
+      });
+      throw err;
+    }
+  }
+  throw new Error('Gemini API failed max attempts');
+}
+
 /**
  * Executes AI pipeline:
  * Input Validation -> Security Guard (Injection Check) -> Formatted Data Context -> AI Layer (Gemini 3.7 Flash) -> Response Validation Layer
@@ -201,15 +268,17 @@ export async function generateAICoachResponse(
   const fullContent = `${dataBlock}\n\n[SOLICITAÇÃO DO ATLETA]: ${scanResult.sanitizedText}`;
 
   try {
-    // 3. AI Inference Layer (Gemini 3.7 Flash)
-    const response = await ai.models.generateContent({
-      model: SERVER_CONFIG.GEMINI_MODEL,
-      contents: [fullContent],
-      config: {
-        systemInstruction: SYSTEM_INSTRUCTION_COACH,
-        temperature: 0.5,
-      },
-    });
+    // 3. AI Inference Layer with Backoff (Gemini 3.7 Flash)
+    const response = await callGeminiWithBackoff(() =>
+      ai.models.generateContent({
+        model: SERVER_CONFIG.GEMINI_MODEL,
+        contents: [fullContent],
+        config: {
+          systemInstruction: SYSTEM_INSTRUCTION_COACH,
+          temperature: 0.5,
+        },
+      })
+    );
 
     const rawText = response.text || '';
     if (!rawText.trim()) {
@@ -220,7 +289,12 @@ export async function generateAICoachResponse(
     const validation = AISecurityGuard.validateAIResponse(rawText);
     return validation.output;
   } catch (error) {
-    logger.error('Error in AI Inference Layer, activating deterministic sports science fallback', { error });
+    logger.error('Error in AI Inference Layer, activating deterministic sports science fallback', {
+      error: error instanceof Error ? error.message : String(error),
+      isRateLimit: isRateLimitError(error),
+      provider: 'gemini',
+      timestamp: new Date().toISOString(),
+    });
     const fallbackAnswer = generateDeterministicCoachAnswer(scanResult.sanitizedText, context);
     const validated = AISecurityGuard.validateAIResponse(fallbackAnswer);
     return validated.output;
@@ -252,20 +326,27 @@ export async function explainPrescriptionResponse(
 - Foco da fase: ${safeReason}`;
 
   try {
-    const response = await ai.models.generateContent({
-      model: SERVER_CONFIG.GEMINI_MODEL,
-      contents: [prompt],
-      config: {
-        systemInstruction: 'Você é um fisiologista do exercício e biomecânico. Forneça explicações precisas e concisas baseadas na literatura de hipertrofia muscular.',
-        temperature: 0.4,
-      },
-    });
+    const response = await callGeminiWithBackoff(() =>
+      ai.models.generateContent({
+        model: SERVER_CONFIG.GEMINI_MODEL,
+        contents: [prompt],
+        config: {
+          systemInstruction: 'Você é um fisiologista do exercício e biomecânico. Forneça explicações precisas e concisas baseadas na literatura de hipertrofia muscular.',
+          temperature: 0.4,
+        },
+      })
+    );
 
     const rawText = response.text || '';
     const validation = AISecurityGuard.validateAIResponse(rawText);
     return validation.output;
   } catch (error) {
-    logger.error('Error generating prescription explanation', { error });
+    logger.error('Error generating prescription explanation', {
+      error: error instanceof Error ? error.message : String(error),
+      isRateLimit: isRateLimitError(error),
+      provider: 'gemini',
+      timestamp: new Date().toISOString(),
+    });
     return `Prescrição calculada pelo Motor Determinístico: ${targetSets} séries de ${reps} repetições a RIR ${rir} para maximizar a tensão mecânica em ${safeExercise} com fadiga controlada.`;
   }
 }

@@ -27,6 +27,7 @@ import { entitlementService } from '../services/entitlementService';
 import { PaymentWebhookService } from '../services/paymentWebhookService';
 import { WebhookSignatureVerifier } from '../services/payments/webhookSignatureVerifier';
 import { setFirestoreAdapter, MemoryFirestoreAdapter } from '../repositories/firestoreAdapter';
+import { runRateLimitDiagnosticTests } from './rateLimitDiagnostic.test';
 import { UserProfile, Exercise, SetLog } from '../../src/types';
 import type { Request, Response, NextFunction } from 'express';
 
@@ -395,6 +396,9 @@ async function runComprehensiveAutomatedTests() {
     const validated = AISecurityGuard.validateAIResponse(dangerousOutput);
     assertTest(validated.isValid === false, 'AISecurity: Interceptou e bloqueou vazamento de API Key na resposta da IA');
   }
+
+  // 7. Rate Limit & Diagnostic Suite (F3)
+  await runRateLimitDiagnosticTests();
 
   console.log('\n===================================================================');
   console.log(`   RESULTADO: ${passedCount}/${totalCount} TESTES PASSARAM COM SUCESSO (100%)    `);

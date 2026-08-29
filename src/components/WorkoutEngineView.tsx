@@ -32,9 +32,18 @@ export const WorkoutEngineView: React.FC<WorkoutEngineViewProps> = ({
 
   const handleFetchAiExplanation = async () => {
     setLoadingAi(true);
-    const explanation = await fetchPrescriptionExplanation(userProfile, program);
-    setAiExplanation(explanation);
-    setLoadingAi(false);
+    try {
+      const explanation = await fetchPrescriptionExplanation(userProfile, program);
+      setAiExplanation(explanation);
+    } catch (err: any) {
+      if (err?.code === 'RATE_LIMIT_EXCEEDED' || err?.status === 429) {
+        setAiExplanation(`⚠️ Limite de solicitações atingido (RATE EXCEEDED). Por favor, aguarde ${err?.retryAfter || 60} segundos antes de solicitar uma nova explicação.`);
+      } else {
+        setAiExplanation('Não foi possível carregar a explicação da IA no momento.');
+      }
+    } finally {
+      setLoadingAi(false);
+    }
   };
 
   const muscleLabels: Record<MuscleGroup, string> = {

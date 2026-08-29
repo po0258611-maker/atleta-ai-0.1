@@ -123,17 +123,39 @@ Como posso orientar seus treinos ou estratégia metabólica hoje?`,
     setLoading(true);
     setQueryCount((prev) => prev + 1);
 
-    const aiResponseText = await askAICoach(promptText, profile, program);
+    try {
+      const aiResponseText = await askAICoach(promptText, profile, program);
 
-    const aiMsg: ChatMessage = {
-      id: (Date.now() + 1).toString(),
-      sender: 'ai',
-      text: aiResponseText,
-      time: new Date().toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' }),
-    };
+      const aiMsg: ChatMessage = {
+        id: (Date.now() + 1).toString(),
+        sender: 'ai',
+        text: aiResponseText,
+        time: new Date().toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' }),
+      };
 
-    setMessages((prev) => [...prev, aiMsg]);
-    setLoading(false);
+      setMessages((prev) => [...prev, aiMsg]);
+    } catch (err: any) {
+      let errorMsgText = 'Erro ao processar sua solicitação. Tente novamente em instantes.';
+      if (err?.code === 'RATE_LIMIT_EXCEEDED' || err?.status === 429) {
+        const retrySec = err?.retryAfter || 60;
+        errorMsgText = `⚠️ **Limite de Requisições Atingido (RATE EXCEEDED)**\n\nVocê enviou muitas mensagens em um curto intervalo de tempo. Por favor, aguarde **${retrySec} segundos** antes de enviar uma nova consulta.`;
+      } else if (err?.code === 'MONTHLY_QUOTA_EXCEEDED' || err?.status === 403) {
+        errorMsgText = `⚠️ **Limite de Uso Atingido**\n\nSua cota de mensagens de IA foi atingida para este ciclo. Faça upgrade do seu plano para liberar novas mensagens.`;
+      } else if (err?.message) {
+        errorMsgText = `⚠️ **Aviso do Sistema**: ${err.message}`;
+      }
+
+      const aiMsg: ChatMessage = {
+        id: (Date.now() + 1).toString(),
+        sender: 'ai',
+        text: errorMsgText,
+        time: new Date().toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' }),
+      };
+
+      setMessages((prev) => [...prev, aiMsg]);
+    } finally {
+      setLoading(false);
+    }
   };
 
   // Helper function to render markdown-style formatted text (bold, lists, code, spacing)

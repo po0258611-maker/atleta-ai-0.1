@@ -1,5 +1,8 @@
 node_modules/
 coverage/
+dist/
+server.cjs
+server.cjs.map
 .DS_Store
 *.log
 .env*

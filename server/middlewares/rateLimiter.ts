@@ -41,12 +41,24 @@ export function rateLimiter(req: Request, res: Response, next: NextFunction) {
   }
 
   if (record.count >= SERVER_CONFIG.RATE_LIMIT_MAX_REQUESTS) {
-    logger.warn('Rate limit exceeded', { ip: clientIp, path: req.path });
+    const retryAfterSeconds = Math.max(1, Math.ceil((record.resetTime - now) / 1000));
+    res.setHeader('Retry-After', retryAfterSeconds.toString());
+    logger.warn('Rate limit exceeded', {
+      ip: clientIp,
+      path: req.path,
+      status: 429,
+      retryAfter: retryAfterSeconds,
+      timestamp: new Date().toISOString(),
+    });
+
     return res.status(429).json({
+      success: false,
       error: {
         code: 'RATE_LIMIT_EXCEEDED',
-        message: 'Muitas requisições enviadas. Aguarde um minuto antes de tentar novamente.',
+        message: 'Muitas solicitações enviadas. Aguarde um instante antes de tentar novamente.',
+        retryAfter: retryAfterSeconds,
       },
+      retryAfter: retryAfterSeconds,
     });
   }
 
