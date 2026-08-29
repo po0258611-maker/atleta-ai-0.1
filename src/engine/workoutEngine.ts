@@ -28,7 +28,9 @@ export function validateAndSanitizeProfile(profile: Partial<UserProfile>): UserP
   const sanitizedObjective: WorkoutGoal = profile.objective === 'hypertrophy' || profile.objective === 'strength' || profile.objective === 'fat_loss' || profile.objective === 'recomposition' || profile.objective === 'conditioning' || profile.objective === 'health' ? profile.objective : 'hypertrophy';
   const sanitizedEnvironment: GymEnvironment = profile.environment === 'full_gym' || profile.environment === 'small_gym' || profile.environment === 'home' || profile.environment === 'minimal' ? profile.environment : 'full_gym';
 
-  const priorities = Array.isArray(profile.priorities) ? profile.priorities.filter((m): m is MuscleGroup => MUSCLE_GROUPS.includes(m)) : ['peitoral', 'costas', 'quadriceps'];
+  const priorities: MuscleGroup[] = Array.isArray(profile.priorities)
+    ? profile.priorities.filter((m): m is MuscleGroup => MUSCLE_GROUPS.includes(m))
+    : ['peitoral', 'costas', 'quadriceps'];
   const limitations = Array.isArray(profile.limitations) ? profile.limitations.filter((x): x is string => typeof x === 'string').slice(0, 20) : [];
   const forbiddenExercises = Array.isArray(profile.forbiddenExercises) ? profile.forbiddenExercises.filter((x): x is string => typeof x === 'string').slice(0, 200) : [];
 
@@ -93,11 +95,9 @@ export function determinePrescriptionParameters(exercise: Exercise, experience: 
   else if (objective === 'hypertrophy') targetReps = isCompound ? '6-10' : '10-15';
   else if (objective === 'conditioning' || objective === 'health') targetReps = isCompound ? '8-12' : '12-15';
 
-  // Avoid making failure the default prescription. Advanced lifters may train close to failure,
-  // but routine failure on every isolation set is not a safe universal default.
   let targetRIR = 2;
   if (experience === 'intermediate') targetRIR = isCompound ? 2 : 1;
-  if (experience === 'advanced') targetRIR = isCompound ? 1 : 1;
+  if (experience === 'advanced') targetRIR = 1;
   const targetRPE = 10 - targetRIR;
   let targetRestSec = exercise.descanso || (isCompound ? 120 : 75);
   if (objective === 'strength' && isCompound) targetRestSec = Math.max(targetRestSec, 150);
@@ -162,13 +162,9 @@ export function allocateExerciseSets(splitPatternsMap: { dayId: 'A' | 'B' | 'C' 
     });
   });
 
-  // Distribute each muscle's weekly target across its actual exercise occurrences.
-  // The previous cumulative remainder algorithm could overshoot targets because every
-  // exercise was clamped to a minimum of 2 sets after the remainder was calculated.
   occurrences.forEach((items, muscle) => {
     const target = Math.max(0, Math.round(targetWeeklyVolume[muscle] || 0));
     if (!items.length) return;
-
     const baseMin = experience === 'beginner' ? 1 : 2;
     const maxPerExercise = 5;
     const floorSets = Math.floor(target / items.length);
@@ -180,8 +176,6 @@ export function allocateExerciseSets(splitPatternsMap: { dayId: 'A' | 'B' | 'C' 
       return;
     }
 
-    // When the theoretical target cannot fit into the number of available exercises,
-    // prioritize safe, time-feasible prescriptions rather than inventing extra sets.
     const safeAverage = Math.max(baseMin, Math.min(maxPerExercise, Math.round(target / items.length)));
     items.forEach((item) => {
       let sets = safeAverage;
