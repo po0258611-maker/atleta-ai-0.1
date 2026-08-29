@@ -1,16 +1,12 @@
 function requiredSecret(name: string): string {
   const value = process.env[name]?.trim();
-  if (!value) {
-    throw new Error(`Missing required environment variable: ${name}`);
-  }
+  if (!value) throw new Error(`Missing required environment variable: ${name}`);
   return value;
 }
 
 function requiredProjectId(): string {
   const value = process.env.FIREBASE_PROJECT_ID?.trim();
-  if (!value) {
-    throw new Error('FIREBASE_PROJECT_ID is required to initialize Firebase Admin SDK.');
-  }
+  if (!value) throw new Error('FIREBASE_PROJECT_ID is required to initialize Firebase Admin SDK.');
   return value;
 }
 
@@ -27,7 +23,14 @@ if (isProduction && corsOrigins.length === 0) {
   throw new Error('CORS_ORIGINS is required in production.');
 }
 
-const paymentMode = process.env.PAYMENT_MODE?.trim() === 'live' ? 'live' : 'mock';
+const requestedPaymentMode = process.env.PAYMENT_MODE?.trim().toLowerCase() || 'disabled';
+const paymentsEnabled = process.env.PAYMENTS_ENABLED?.trim().toLowerCase() === 'true';
+
+// F1 deliberately does not activate a payment gateway. Live payments require an
+// explicit enable flag plus live mode in a later payment implementation phase.
+if (isProduction && paymentsEnabled && requestedPaymentMode !== 'live') {
+  throw new Error('Production payments require PAYMENT_MODE=live.');
+}
 
 export const SERVER_CONFIG = {
   PORT: Number(process.env.PORT || 3000),
@@ -38,17 +41,18 @@ export const SERVER_CONFIG = {
   SUPABASE_URL: isProduction ? requiredSecret('SUPABASE_URL') : (process.env.SUPABASE_URL?.trim() || ''),
   SUPABASE_ANON_KEY: isProduction ? requiredSecret('SUPABASE_ANON_KEY') : (process.env.SUPABASE_ANON_KEY?.trim() || ''),
   FIREBASE_PROJECT_ID: isProduction || !isTest ? requiredProjectId() : (process.env.FIREBASE_PROJECT_ID?.trim() || ''),
-  PAYMENT_MODE: paymentMode,
-  STRIPE_WEBHOOK_SECRET: isProduction ? requiredSecret('STRIPE_WEBHOOK_SECRET') : (process.env.STRIPE_WEBHOOK_SECRET?.trim() || ''),
-  PIX_WEBHOOK_SECRET: isProduction ? requiredSecret('PIX_WEBHOOK_SECRET') : (process.env.PIX_WEBHOOK_SECRET?.trim() || ''),
+  PAYMENT_MODE: requestedPaymentMode === 'live' ? 'live' : requestedPaymentMode === 'mock' ? 'mock' : 'disabled',
+  PAYMENTS_ENABLED: paymentsEnabled,
+  STRIPE_WEBHOOK_SECRET: isProduction && paymentsEnabled ? requiredSecret('STRIPE_WEBHOOK_SECRET') : (process.env.STRIPE_WEBHOOK_SECRET?.trim() || ''),
+  PIX_WEBHOOK_SECRET: isProduction && paymentsEnabled ? requiredSecret('PIX_WEBHOOK_SECRET') : (process.env.PIX_WEBHOOK_SECRET?.trim() || ''),
   TRUST_PROXY: process.env.TRUST_PROXY?.trim() === 'true',
   RATE_LIMIT_WINDOW_MS: 60 * 1000,
   RATE_LIMIT_MAX_REQUESTS: Math.max(1, Number(process.env.RATE_LIMIT_MAX_REQUESTS) || 30),
   MAX_PROMPT_LENGTH: Math.max(100, Number(process.env.MAX_PROMPT_LENGTH) || 4000),
 };
 
-if (isProduction && SERVER_CONFIG.PAYMENT_MODE !== 'live') {
-  throw new Error('PAYMENT_MODE=live is required in production. Mock payment providers are disabled for safety.');
+if (SERVER_CONFIG.PAYMENTS_ENABLED && SERVER_CONFIG.PAYMENT_MODE === 'disabled') {
+  throw new Error('PAYMENTS_ENABLED=true requires a configured payment mode.');
 }
 
 if (!Number.isFinite(SERVER_CONFIG.PORT) || SERVER_CONFIG.PORT < 1 || SERVER_CONFIG.PORT > 65535) {
