@@ -1,14 +1,14 @@
 {
-  "name": "react-example",
+  "name": "atleta-ai",
   "private": true,
-  "version": "0.0.0",
+  "version": "2.6.0",
   "type": "module",
   "scripts": {
     "dev": "tsx server.ts",
     "build": "vite build && esbuild server.ts --bundle --platform=node --format=cjs --packages=external --sourcemap --outfile=dist/server.cjs",
     "start": "node dist/server.cjs",
     "preview": "vite preview",
-    "clean": "rm -rf dist server.cjs",
+    "clean": "rm -rf dist",
     "lint": "tsc --noEmit",
     "test": "tsx src/engine/tests/workoutEngine.test.ts && tsx src/engine/tests/progressionEngine.test.ts && tsx src/engine/tests/oneRepMax.test.ts && tsx src/engine/tests/bodyComposition.test.ts && tsx src/engine/tests/fatigueEngine.test.ts && tsx src/engine/tests/bioAtlas.test.ts && tsx src/engine/tests/aiArchitecture.test.ts && tsx src/engine/tests/safetyAndNutrition.test.ts && tsx server/tests/firestorePersistence.test.ts && tsx server/tests/atomicQuotaConcurrency.test.ts && tsx server/tests/webhookSecurity.test.ts && tsx server/tests/rbac.test.ts && tsx server/tests/subscription.test.ts && tsx server/tests/entitlementEngine.test.ts && tsx server/tests/paymentProvider.test.ts && tsx server/tests/supabaseDatabase.test.ts && tsx server/tests/rateLimitDiagnostic.test.ts && tsx server/tests/comprehensiveSystem.test.ts"
   },
@@ -28,6 +28,8 @@
     "jspdf": "^4.2.1",
     "lucide-react": "^0.546.0",
     "motion": "^12.23.24",
+    "react": "^19.0.1",
+    "react-dom": "^19.0.1",
     "recharts": "^3.10.1",
     "tailwindcss": "^4.1.14",
     "tsx": "^4.21.0",
