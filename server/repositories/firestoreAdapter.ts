@@ -39,36 +39,28 @@ export interface IFirestoreAdapter {
   runTransaction<T>(updateFunction: (transaction: IFirestoreTransaction) => Promise<T>): Promise<T>;
 }
 
+const allowMemoryFallback =
+  process.env.NODE_ENV !== 'production' &&
+  process.env.FIRESTORE_ALLOW_MEMORY_FALLBACK === 'true';
+
 function isFirestoreUnavailableError(err: any): boolean {
   if (!err) return false;
   const msg = (err.message || String(err)).toLowerCase();
   const code = err.code;
   return (
-    code === 5 ||
-    code === '5' ||
-    code === 14 ||
-    code === '14' ||
-    code === 7 ||
-    code === '7' ||
-    code === 16 ||
-    code === '16' ||
-    msg.includes('5 not_found') ||
-    msg.includes('not_found') ||
+    code === 5 || code === '5' ||
+    code === 14 || code === '14' ||
     msg.includes('not found') ||
     msg.includes('unavailable') ||
-    msg.includes('permission_denied') ||
-    msg.includes('deadline_exceeded') ||
-    msg.includes('unauthenticated') ||
     msg.includes('econnrefused') ||
-    msg.includes('does not exist') ||
     msg.includes('could not reach') ||
-    msg.includes('default credentials') ||
-    msg.includes('project')
+    msg.includes('default credentials')
   );
 }
 
 /**
- * Native Firebase Admin SDK Firestore Adapter with resilient memory fallback
+ * Firebase Admin Firestore adapter.
+ * Memory fallback is explicitly opt-in and is never used in production.
  */
 export class AdminFirestoreAdapter implements IFirestoreAdapter {
   private memoryFallback: MemoryFirestoreAdapter;
@@ -77,16 +69,25 @@ export class AdminFirestoreAdapter implements IFirestoreAdapter {
     this.memoryFallback = memoryFallback || new MemoryFirestoreAdapter();
   }
 
+  private fallbackOrThrow<T>(fallbackFactory: () => Promise<T>, error: unknown): Promise<T> {
+    if (allowMemoryFallback && isFirestoreUnavailableError(error)) {
+      logger.warn('Firestore unavailable; using explicit development memory fallback.');
+      return fallbackFactory();
+    }
+    return Promise.reject(error);
+  }
+
   collection(name: string): IFirestoreCollection {
     const fallbackCol = this.memoryFallback.collection(name);
-
     let db: any;
     let colRef: any;
+
     try {
       db = getAdminFirestore();
       colRef = db.collection(name);
-    } catch {
-      return fallbackCol;
+    } catch (error) {
+      if (allowMemoryFallback) return fallbackCol;
+      throw error;
     }
 
     return {
@@ -98,48 +99,39 @@ export class AdminFirestoreAdapter implements IFirestoreAdapter {
           get: async () => {
             try {
               const snap = await docRef.get();
-              return {
-                id: snap.id,
-                exists: snap.exists,
-                data: () => snap.data(),
-              };
-            } catch (err: any) {
-              if (isFirestoreUnavailableError(err)) {
-                return fallbackDoc.get();
-              }
-              throw err;
+              return { id: snap.id, exists: snap.exists, data: () => snap.data() };
+            } catch (error) {
+              return this.fallbackOrThrow(() => fallbackDoc.get(), error);
             }
           },
           set: async (data: any, options?: { merge?: boolean }) => {
-            await fallbackDoc.set(data, options);
             try {
               await docRef.set(data, { merge: options?.merge ?? false });
-            } catch (err: any) {
-              if (isFirestoreUnavailableError(err)) {
+            } catch (error) {
+              if (allowMemoryFallback && isFirestoreUnavailableError(error)) {
+                await fallbackDoc.set(data, options);
                 return;
               }
-              throw err;
+              throw error;
             }
           },
           delete: async () => {
-            await fallbackDoc.delete();
             try {
               await docRef.delete();
-            } catch (err: any) {
-              if (isFirestoreUnavailableError(err)) {
+            } catch (error) {
+              if (allowMemoryFallback && isFirestoreUnavailableError(error)) {
+                await fallbackDoc.delete();
                 return;
               }
-              throw err;
+              throw error;
             }
           },
         };
       },
-      where: (field: string, op: '==', value: any) => {
-        return createAdminQuery(colRef.where(field, op, value), () => fallbackCol.where(field, op, value));
-      },
-      limit: (count: number) => {
-        return createAdminQuery(colRef.limit(count), () => fallbackCol.limit(count));
-      },
+      where: (field: string, op: '==', value: any) =>
+        createAdminQuery(colRef.where(field, op, value), () => fallbackCol.where(field, op, value)),
+      limit: (count: number) =>
+        createAdminQuery(colRef.limit(count), () => fallbackCol.limit(count)),
       get: async () => {
         try {
           const snap = await colRef.get();
@@ -151,11 +143,8 @@ export class AdminFirestoreAdapter implements IFirestoreAdapter {
               data: () => d.data(),
             })),
           };
-        } catch (err: any) {
-          if (isFirestoreUnavailableError(err)) {
-            return fallbackCol.get();
-          }
-          throw err;
+        } catch (error) {
+          return this.fallbackOrThrow(() => fallbackCol.get(), error);
         }
       },
     };
@@ -165,16 +154,16 @@ export class AdminFirestoreAdapter implements IFirestoreAdapter {
     let db: any;
     try {
       db = getAdminFirestore();
-    } catch {
-      return this.memoryFallback.runTransaction(updateFunction);
+    } catch (error) {
+      if (allowMemoryFallback) return this.memoryFallback.runTransaction(updateFunction);
+      throw error;
     }
 
     try {
       return await db.runTransaction(async (adminTx: any) => {
         const tx: IFirestoreTransaction = {
           get: async (collectionName: string, docId: string) => {
-            const docRef = db.collection(collectionName).doc(docId);
-            const snap = await adminTx.get(docRef);
+            const snap = await adminTx.get(db.collection(collectionName).doc(docId));
             return {
               id: snap.id,
               exists: snap.exists,
@@ -182,39 +171,36 @@ export class AdminFirestoreAdapter implements IFirestoreAdapter {
             };
           },
           set: (collectionName: string, docId: string, data: any, options?: { merge?: boolean }) => {
-            const docRef = db.collection(collectionName).doc(docId);
-            adminTx.set(docRef, data, { merge: options?.merge ?? false });
+            adminTx.set(db.collection(collectionName).doc(docId), data, { merge: options?.merge ?? false });
           },
           delete: (collectionName: string, docId: string) => {
-            const docRef = db.collection(collectionName).doc(docId);
-            adminTx.delete(docRef);
+            adminTx.delete(db.collection(collectionName).doc(docId));
           },
         };
-        return await updateFunction(tx);
+        return updateFunction(tx);
       });
-    } catch (err: any) {
-      if (isFirestoreUnavailableError(err)) {
+    } catch (error) {
+      if (allowMemoryFallback && isFirestoreUnavailableError(error)) {
+        logger.warn('Firestore transaction unavailable; using explicit development memory fallback.');
         return this.memoryFallback.runTransaction(updateFunction);
       }
-      throw err;
+      throw error;
     }
   }
 }
 
 function createAdminQuery(queryRef: any, fallbackQueryGetter?: () => IFirestoreQuery): IFirestoreQuery {
   return {
-    where: (field: string, op: '==', value: any) => {
-      return createAdminQuery(
+    where: (field: string, op: '==', value: any) =>
+      createAdminQuery(
         queryRef.where(field, op, value),
         fallbackQueryGetter ? () => fallbackQueryGetter().where(field, op, value) : undefined
-      );
-    },
-    limit: (count: number) => {
-      return createAdminQuery(
+      ),
+    limit: (count: number) =>
+      createAdminQuery(
         queryRef.limit(count),
         fallbackQueryGetter ? () => fallbackQueryGetter().limit(count) : undefined
-      );
-    },
+      ),
     get: async () => {
       try {
         const snap = await queryRef.get();
@@ -226,19 +212,17 @@ function createAdminQuery(queryRef: any, fallbackQueryGetter?: () => IFirestoreQ
             data: () => d.data(),
           })),
         };
-      } catch (err: any) {
-        if (isFirestoreUnavailableError(err) && fallbackQueryGetter) {
+      } catch (error) {
+        if (allowMemoryFallback && fallbackQueryGetter && isFirestoreUnavailableError(error)) {
           return fallbackQueryGetter().get();
         }
-        throw err;
+        throw error;
       }
     },
   };
 }
 
-/**
- * In-Memory Firestore Emulator Store (Used for deterministic testing & offline validation)
- */
+/** In-memory adapter used only by tests or explicit development fallback. */
 export class MemoryFirestoreAdapter implements IFirestoreAdapter {
   private store: Map<string, Map<string, any>> = new Map();
   private transactionQueue: Promise<void> = Promise.resolve();
@@ -256,113 +240,63 @@ export class MemoryFirestoreAdapter implements IFirestoreAdapter {
   }
 
   private getCollectionMap(name: string): Map<string, any> {
-    if (!this.store.has(name)) {
-      this.store.set(name, new Map());
-    }
+    if (!this.store.has(name)) this.store.set(name, new Map());
     return this.store.get(name)!;
   }
 
   collection(name: string): IFirestoreCollection {
     const colMap = this.getCollectionMap(name);
-
     return {
       doc: (id: string) => ({
         get: async () => {
           const docData = colMap.get(id);
-          return {
-            id,
-            exists: docData !== undefined,
-            data: () => (docData !== undefined ? JSON.parse(JSON.stringify(docData)) : undefined),
-          };
+          return { id, exists: docData !== undefined, data: () => (docData !== undefined ? JSON.parse(JSON.stringify(docData)) : undefined) };
         },
         set: async (data: any, options?: { merge?: boolean }) => {
           if (options?.merge && colMap.has(id)) {
-            const current = colMap.get(id) || {};
-            colMap.set(id, { ...current, ...JSON.parse(JSON.stringify(data)) });
+            colMap.set(id, { ...(colMap.get(id) || {}), ...JSON.parse(JSON.stringify(data)) });
           } else {
             colMap.set(id, JSON.parse(JSON.stringify(data)));
           }
         },
-        delete: async () => {
-          colMap.delete(id);
-        },
+        delete: async () => { colMap.delete(id); },
       }),
-      where: (field: string, op: '==', value: any) => {
-        return createMemoryQuery(colMap, [{ field, op, value }]);
-      },
-      limit: (count: number) => {
-        return createMemoryQuery(colMap, [], count);
-      },
+      where: (field: string, op: '==', value: any) => createMemoryQuery(colMap, [{ field, op, value }]),
+      limit: (count: number) => createMemoryQuery(colMap, [], count),
       get: async () => {
-        const docs: FirestoreDocumentSnapshot[] = [];
-        for (const [id, data] of colMap.entries()) {
-          docs.push({
-            id,
-            exists: true,
-            data: () => JSON.parse(JSON.stringify(data)),
-          });
-        }
-        return {
-          empty: docs.length === 0,
-          docs,
-        };
+        const docs = Array.from(colMap.entries()).map(([id, data]) => ({
+          id,
+          exists: true,
+          data: () => JSON.parse(JSON.stringify(data)),
+        }));
+        return { empty: docs.length === 0, docs };
       },
     };
   }
 
   async runTransaction<T>(updateFunction: (transaction: IFirestoreTransaction) => Promise<T>): Promise<T> {
-    let releaseLock: () => void;
-    const currentLock = new Promise<void>((resolve) => {
-      releaseLock = resolve;
-    });
-
+    let releaseLock!: () => void;
+    const currentLock = new Promise<void>((resolve) => { releaseLock = resolve; });
     const previousLock = this.transactionQueue;
     this.transactionQueue = currentLock;
-
     await previousLock;
 
     try {
       const stagedWrites: Array<() => void> = [];
-
       const tx: IFirestoreTransaction = {
-        get: async (collectionName: string, docId: string) => {
-          const colMap = this.getCollectionMap(collectionName);
-          const docData = colMap.get(docId);
-          return {
-            id: docId,
-            exists: docData !== undefined,
-            data: () => (docData !== undefined ? JSON.parse(JSON.stringify(docData)) : undefined),
-          };
+        get: async (collectionName, docId) => this.collection(collectionName).doc(docId).get(),
+        set: (collectionName, docId, data, options) => {
+          stagedWrites.push(() => { void this.collection(collectionName).doc(docId).set(data, options); });
         },
-        set: (collectionName: string, docId: string, data: any, options?: { merge?: boolean }) => {
-          stagedWrites.push(() => {
-            const colMap = this.getCollectionMap(collectionName);
-            if (options?.merge && colMap.has(docId)) {
-              const current = colMap.get(docId) || {};
-              colMap.set(docId, { ...current, ...JSON.parse(JSON.stringify(data)) });
-            } else {
-              colMap.set(docId, JSON.parse(JSON.stringify(data)));
-            }
-          });
-        },
-        delete: (collectionName: string, docId: string) => {
-          stagedWrites.push(() => {
-            const colMap = this.getCollectionMap(collectionName);
-            colMap.delete(docId);
-          });
+        delete: (collectionName, docId) => {
+          stagedWrites.push(() => { void this.collection(collectionName).doc(docId).delete(); });
         },
       };
-
       const result = await updateFunction(tx);
-
-      // Apply staged writes atomically
-      for (const write of stagedWrites) {
-        write();
-      }
-
+      for (const write of stagedWrites) write();
       return result;
     } finally {
-      releaseLock!();
+      releaseLock();
     }
   }
 }
@@ -373,35 +307,14 @@ function createMemoryQuery(
   limitCount?: number
 ): IFirestoreQuery {
   return {
-    where: (field: string, op: '==', value: any) => {
-      return createMemoryQuery(colMap, [...filters, { field, op, value }], limitCount);
-    },
-    limit: (count: number) => {
-      return createMemoryQuery(colMap, filters, count);
-    },
+    where: (field: string, op: '==', value: any) => createMemoryQuery(colMap, [...filters, { field, op, value }], limitCount),
+    limit: (count: number) => createMemoryQuery(colMap, filters, count),
     get: async () => {
       let entries = Array.from(colMap.entries());
-
-      for (const filter of filters) {
-        entries = entries.filter(([, data]) => {
-          return data && data[filter.field] === filter.value;
-        });
-      }
-
-      if (limitCount !== undefined) {
-        entries = entries.slice(0, limitCount);
-      }
-
-      const docs: FirestoreDocumentSnapshot[] = entries.map(([id, data]) => ({
-        id,
-        exists: true,
-        data: () => JSON.parse(JSON.stringify(data)),
-      }));
-
-      return {
-        empty: docs.length === 0,
-        docs,
-      };
+      for (const filter of filters) entries = entries.filter(([, data]) => data && data[filter.field] === filter.value);
+      if (limitCount !== undefined) entries = entries.slice(0, limitCount);
+      const docs = entries.map(([id, data]) => ({ id, exists: true, data: () => JSON.parse(JSON.stringify(data)) }));
+      return { empty: docs.length === 0, docs };
     },
   };
 }
