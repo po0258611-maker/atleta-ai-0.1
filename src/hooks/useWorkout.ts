@@ -7,9 +7,9 @@ import { FirestoreDataService } from '../services/firestoreDataService';
 export const INITIAL_PROFILE: UserProfile = {
   name: 'Atleta Google',
   gender: 'male',
-  age: 27,
-  heightCm: 176,
-  weightKg: 78,
+  age: 26,
+  heightCm: 175,
+  weightKg: 75,
   experience: 'intermediate',
   availableDays: 4,
   timePerSessionMin: 60,
@@ -30,7 +30,6 @@ export function useWorkout(userId?: string) {
 
   useEffect(() => {
     if (!userId) return;
-
     let cancelled = false;
     const loadData = async () => {
       try {
@@ -38,37 +37,29 @@ export function useWorkout(userId?: string) {
         const effectiveProfile = validateAndSanitizeProfile(remoteProfile || INITIAL_PROFILE);
         if (cancelled) return;
         setUserProfile(effectiveProfile);
-
         const remoteProgram = await FirestoreDataService.getActiveWorkout(userId);
         if (cancelled) return;
-        if (remoteProgram) {
-          setProgram(remoteProgram);
-        } else {
+        if (remoteProgram) setProgram(remoteProgram);
+        else {
           const initialProg = generateSafeFullBodyWorkout(effectiveProfile);
           setProgram(initialProg);
           await FirestoreDataService.saveActiveWorkout(userId, initialProg);
         }
-
         const remoteLogs = await FirestoreDataService.getWorkoutLogs(userId);
         if (!cancelled) setWorkoutLogs(remoteLogs);
       } catch (err) {
         if (!cancelled) console.warn('Erro ao sincronizar dados de treino com Firestore:', err);
       }
     };
-
     void loadData();
-    return () => {
-      cancelled = true;
-    };
+    return () => { cancelled = true; };
   }, [userId]);
 
   const handleSaveProfile = async (updatedProfile: UserProfile) => {
     const safeProfile = validateAndSanitizeProfile(updatedProfile);
     const newProgram = generateSafeFullBodyWorkout(safeProfile);
-
     setUserProfile(safeProfile);
     setProgram(newProgram);
-
     if (userId) {
       await FirestoreDataService.saveUserProfile(userId, safeProfile);
       await FirestoreDataService.saveActiveWorkout(userId, newProgram);
@@ -86,17 +77,5 @@ export function useWorkout(userId?: string) {
     if (userId) await FirestoreDataService.saveWorkoutLog(userId, newLog);
   };
 
-  return {
-    userProfile,
-    setUserProfile,
-    program,
-    setProgram,
-    activeDayId,
-    setActiveDayId,
-    workoutLogs,
-    setWorkoutLogs,
-    handleSaveProfile,
-    handleRegenerateProgram,
-    handleSaveWorkoutLog,
-  };
+  return { userProfile, setUserProfile, program, setProgram, activeDayId, setActiveDayId, workoutLogs, setWorkoutLogs, handleSaveProfile, handleRegenerateProgram, handleSaveWorkoutLog };
 }
