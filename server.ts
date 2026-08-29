@@ -10,7 +10,7 @@ import { databaseRouter } from "./server/routes/databaseRoutes";
 import { errorHandler } from "./server/middlewares/errorHandler";
 import { logger } from "./server/middlewares/logger";
 import { SERVER_CONFIG } from "./server/config/env";
-import { getFirestoreAdapter } from "./server/repositories/firestoreAdapter";
+import { getAdminFirestore } from "./server/services/firebaseAdmin";
 
 function applySecurityHeaders(app: express.Express) {
   const isProduction = SERVER_CONFIG.NODE_ENV === "production";
@@ -22,7 +22,7 @@ function applySecurityHeaders(app: express.Express) {
     res.setHeader(
       "Content-Security-Policy",
       isProduction
-        ? "default-src 'self'; base-uri 'self'; frame-ancestors 'self'; object-src 'none'; img-src 'self' data: https: blob:; style-src 'self' 'unsafe-inline'; script-src 'self' 'unsafe-inline' https:; connect-src 'self' https: wss:; font-src 'self' data: https:"
+        ? "default-src 'self'; base-uri 'self'; frame-ancestors 'self'; object-src 'none'; img-src 'self' data: https: blob:; style-src 'self' 'unsafe-inline'; script-src 'self' 'unsafe-inline'; connect-src 'self' https: wss:; font-src 'self' data: https:"
         : "default-src 'self' 'unsafe-inline' 'unsafe-eval' data: blob: https: http: ws: wss:; base-uri 'self'; frame-ancestors 'self'; object-src 'none'"
     );
     if (isProduction && (_req.secure || _req.headers["x-forwarded-proto"] === "https")) {
@@ -44,7 +44,7 @@ function applyCors(app: express.Express) {
       if (req.method === "OPTIONS") {
         return res.status(403).json({ error: { code: "CORS_ORIGIN_DENIED", message: "Origem não autorizada." } });
       }
-      return next();
+      return res.status(403).json({ error: { code: "CORS_ORIGIN_DENIED", message: "Origem não autorizada." } });
     }
     res.setHeader("Access-Control-Allow-Origin", origin);
     res.setHeader("Vary", "Origin");
@@ -53,6 +53,15 @@ function applyCors(app: express.Express) {
     if (req.method === "OPTIONS") return res.status(204).end();
     return next();
   });
+}
+
+async function checkFirestore(): Promise<{ connected: boolean; message?: string }> {
+  try {
+    await getAdminFirestore().collection("_health").doc("readiness").get();
+    return { connected: true };
+  } catch (error) {
+    return { connected: false, message: error instanceof Error ? error.message : "Firestore indisponível" };
+  }
 }
 
 async function startServer() {
@@ -68,14 +77,15 @@ async function startServer() {
 
   app.get("/api/health", (_req, res) => res.status(200).json({ status: "ok", version: SERVER_CONFIG.APP_VERSION, environment: SERVER_CONFIG.NODE_ENV, timestamp: new Date().toISOString() }));
 
-  app.get("/api/ready", (_req, res) => {
-    const dbAdapter = getFirestoreAdapter();
+  app.get("/api/ready", async (_req, res) => {
+    const firestore = await checkFirestore();
     const buildArtifactReady = !isProduction || fs.existsSync(path.join(process.cwd(), "dist", "index.html"));
-    const ready = Boolean(dbAdapter) && buildArtifactReady;
+    const ready = firestore.connected && buildArtifactReady;
     return res.status(ready ? 200 : 503).json({
       status: ready ? "ready" : "not_ready",
       version: SERVER_CONFIG.APP_VERSION,
-      checks: { database: Boolean(dbAdapter), buildArtifacts: buildArtifactReady },
+      checks: { database: firestore.connected, buildArtifacts: buildArtifactReady },
+      errors: firestore.connected ? undefined : { database: firestore.message },
       timestamp: new Date().toISOString(),
     });
   });
