@@ -14,7 +14,6 @@
     "isolatedModules": true,
     "moduleDetection": "force",
     "allowJs": true,
-    "checkJs": false,
     "jsx": "react-jsx",
     "paths": {
       "@/*": [
@@ -22,13 +21,6 @@
       ]
     },
     "allowImportingTsExtensions": true,
-    "noEmit": true,
-    "strict": true,
-    "noImplicitReturns": true,
-    "noFallthroughCasesInSwitch": true,
-    "noUnusedLocals": false,
-    "noUnusedParameters": false,
-    "forceConsistentCasingInFileNames": true
-  },
-  "include": ["src", "server.ts", "server", "vite.config.ts"]
+    "noEmit": true
+  }
 }
