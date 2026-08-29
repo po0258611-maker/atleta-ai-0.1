@@ -8,7 +8,6 @@ import { PixPaymentProvider } from './pixPaymentProvider';
 import { StripeGatewayProvider } from './stripePaymentProvider';
 import { subscriptionServerRepository } from '../../repositories/subscriptionServerRepository';
 import { logger } from '../../middlewares/logger';
-import { SERVER_CONFIG } from '../../config/env';
 import { getPaidPlan } from '../../config/plans';
 
 export class PaymentManagerService {
@@ -16,8 +15,16 @@ export class PaymentManagerService {
   private stripeProvider = new StripeGatewayProvider();
 
   getProvider(method: string): PaymentProvider {
-    if (method === 'pix' || method === 'pix_direct') return this.pixProvider;
-    return this.stripeProvider;
+    switch (method) {
+      case 'pix':
+      case 'pix_direct':
+        return this.pixProvider;
+      case 'credit_card':
+      case 'stripe':
+        return this.stripeProvider;
+      default:
+        throw new Error('PAYMENT_METHOD_NOT_SUPPORTED');
+    }
   }
 
   async initiatePayment(input: CreatePaymentInput): Promise<PaymentTransactionResult> {
@@ -26,11 +33,13 @@ export class PaymentManagerService {
       throw new Error('INVALID_SERVER_PRICING');
     }
 
-    return this.getProvider(input.paymentMethod).createPayment(input);
+    const provider = this.getProvider(input.paymentMethod);
+    return provider.createPayment(input);
   }
 
   async checkPaymentStatus(providerName: string, transactionId: string): Promise<PaymentGatewayStatus> {
-    return this.getProvider(providerName).getPaymentStatus(transactionId);
+    const provider = this.getProvider(providerName);
+    return provider.getPaymentStatus(transactionId);
   }
 
   async processVerifiedPayment(
