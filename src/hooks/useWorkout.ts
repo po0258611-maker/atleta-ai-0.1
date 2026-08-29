@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
 import { UserProfile, FullBodyProgram, WorkoutLog } from '../types';
-import { generateFullBodyWorkout } from '../engine/workoutEngine';
+import { generateSafeFullBodyWorkout } from '../engine/safeWorkoutEngine';
+import { validateAndSanitizeProfile } from '../engine/workoutEngine';
 import { FirestoreDataService } from '../services/firestoreDataService';
 
 export const INITIAL_PROFILE: UserProfile = {
@@ -23,71 +24,66 @@ export const INITIAL_PROFILE: UserProfile = {
 
 export function useWorkout(userId?: string) {
   const [userProfile, setUserProfile] = useState<UserProfile>(INITIAL_PROFILE);
-  const [program, setProgram] = useState<FullBodyProgram>(() =>
-    generateFullBodyWorkout(INITIAL_PROFILE)
-  );
+  const [program, setProgram] = useState<FullBodyProgram>(() => generateSafeFullBodyWorkout(INITIAL_PROFILE));
   const [activeDayId, setActiveDayId] = useState<'A' | 'B' | 'C' | 'D'>('A');
   const [workoutLogs, setWorkoutLogs] = useState<WorkoutLog[]>([]);
 
-  // Hydrate user workout profile, active program & logs from Firestore on login
   useEffect(() => {
     if (!userId) return;
 
+    let cancelled = false;
     const loadData = async () => {
       try {
-        // 1. Profile
         const remoteProfile = await FirestoreDataService.getUserProfile(userId);
-        const effectiveProfile = remoteProfile || INITIAL_PROFILE;
-        if (remoteProfile) {
-          setUserProfile(remoteProfile);
-        }
+        const effectiveProfile = validateAndSanitizeProfile(remoteProfile || INITIAL_PROFILE);
+        if (cancelled) return;
+        setUserProfile(effectiveProfile);
 
-        // 2. Active Workout Program
         const remoteProgram = await FirestoreDataService.getActiveWorkout(userId);
+        if (cancelled) return;
         if (remoteProgram) {
           setProgram(remoteProgram);
         } else {
-          const initialProg = generateFullBodyWorkout(effectiveProfile);
+          const initialProg = generateSafeFullBodyWorkout(effectiveProfile);
           setProgram(initialProg);
-          FirestoreDataService.saveActiveWorkout(userId, initialProg);
+          await FirestoreDataService.saveActiveWorkout(userId, initialProg);
         }
 
-        // 3. Workout Logs
         const remoteLogs = await FirestoreDataService.getWorkoutLogs(userId);
-        setWorkoutLogs(remoteLogs);
+        if (!cancelled) setWorkoutLogs(remoteLogs);
       } catch (err) {
-        console.warn('Erro ao sincronizar dados de treino com Firestore:', err);
+        if (!cancelled) console.warn('Erro ao sincronizar dados de treino com Firestore:', err);
       }
     };
 
-    loadData();
+    void loadData();
+    return () => {
+      cancelled = true;
+    };
   }, [userId]);
 
   const handleSaveProfile = async (updatedProfile: UserProfile) => {
-    setUserProfile(updatedProfile);
-    if (userId) {
-      await FirestoreDataService.saveUserProfile(userId, updatedProfile);
-    }
-    const newProgram = generateFullBodyWorkout(updatedProfile);
+    const safeProfile = validateAndSanitizeProfile(updatedProfile);
+    const newProgram = generateSafeFullBodyWorkout(safeProfile);
+
+    setUserProfile(safeProfile);
     setProgram(newProgram);
+
     if (userId) {
+      await FirestoreDataService.saveUserProfile(userId, safeProfile);
       await FirestoreDataService.saveActiveWorkout(userId, newProgram);
     }
   };
 
   const handleRegenerateProgram = async () => {
-    const newProgram = generateFullBodyWorkout(userProfile);
+    const newProgram = generateSafeFullBodyWorkout(userProfile);
     setProgram(newProgram);
-    if (userId) {
-      await FirestoreDataService.saveActiveWorkout(userId, newProgram);
-    }
+    if (userId) await FirestoreDataService.saveActiveWorkout(userId, newProgram);
   };
 
   const handleSaveWorkoutLog = async (newLog: WorkoutLog) => {
     setWorkoutLogs((prev) => [newLog, ...prev]);
-    if (userId) {
-      await FirestoreDataService.saveWorkoutLog(userId, newLog);
-    }
+    if (userId) await FirestoreDataService.saveWorkoutLog(userId, newLog);
   };
 
   return {
