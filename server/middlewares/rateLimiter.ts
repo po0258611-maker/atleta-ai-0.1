@@ -7,36 +7,35 @@ interface RateLimitRecord {
   resetTime: number;
 }
 
-const ipRequestMap = new Map<string, RateLimitRecord>();
+// In-memory limiter is intentionally local to a process. For multi-instance
+// production deployments, replace this store with Redis or another shared store.
+const requestMap = new Map<string, RateLimitRecord>();
 
-// Cleanup stale IP entries without keeping Node alive during tests/shutdown.
 const cleanupTimer = setInterval(() => {
   const now = Date.now();
-  for (const [ip, record] of ipRequestMap.entries()) {
-    if (now > record.resetTime) {
-      ipRequestMap.delete(ip);
-    }
+  for (const [key, record] of requestMap.entries()) {
+    if (now > record.resetTime) requestMap.delete(key);
   }
 }, 5 * 60 * 1000);
 cleanupTimer.unref?.();
 
 function getClientIp(req: Request): string {
-  // Express computes req.ip using the configured trust proxy policy.
-  // Never consume X-Forwarded-For directly because it is client-controlled
-  // unless a trusted proxy is explicitly configured in server.ts.
   return req.ip || req.socket.remoteAddress || 'unknown-ip';
 }
 
+function getRateLimitKey(req: Request): string {
+  const user = (req as Request & { user?: { uid?: string } }).user;
+  const identity = user?.uid ? `user:${user.uid}` : `ip:${getClientIp(req)}`;
+  return `${identity}:${req.method}:${req.baseUrl || ''}${req.path}`;
+}
+
 export function rateLimiter(req: Request, res: Response, next: NextFunction) {
-  const clientIp = getClientIp(req);
+  const key = getRateLimitKey(req);
   const now = Date.now();
-  const record = ipRequestMap.get(clientIp);
+  const record = requestMap.get(key);
 
   if (!record || now > record.resetTime) {
-    ipRequestMap.set(clientIp, {
-      count: 1,
-      resetTime: now + SERVER_CONFIG.RATE_LIMIT_WINDOW_MS,
-    });
+    requestMap.set(key, { count: 1, resetTime: now + SERVER_CONFIG.RATE_LIMIT_WINDOW_MS });
     return next();
   }
 
@@ -44,13 +43,12 @@ export function rateLimiter(req: Request, res: Response, next: NextFunction) {
     const retryAfterSeconds = Math.max(1, Math.ceil((record.resetTime - now) / 1000));
     res.setHeader('Retry-After', retryAfterSeconds.toString());
     logger.warn('Rate limit exceeded', {
-      ip: clientIp,
+      key,
       path: req.path,
       status: 429,
       retryAfter: retryAfterSeconds,
       timestamp: new Date().toISOString(),
     });
-
     return res.status(429).json({
       success: false,
       error: {
