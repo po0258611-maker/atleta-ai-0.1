@@ -37,13 +37,32 @@ function applyCors(app: express.Express) {
   app.use((req, res, next) => {
     const origin = req.headers.origin;
     if (!origin) return next();
+
+    let parsedOrigin: URL;
+    try {
+      parsedOrigin = new URL(origin);
+    } catch {
+      return res.status(403).json({ error: { code: "CORS_ORIGIN_DENIED", message: "Origem não autorizada." } });
+    }
+
     const host = req.headers.host;
     const isSameOrigin = Boolean(host && (origin === `http://${host}` || origin === `https://${host}`));
-    const isAiStudioOrigin = /^https:\/\/(?:[^.]+\.)?(?:aistudio\.google\.com|ai\.studio|googleusercontent\.com)$/.test(origin);
+    const isHttps = parsedOrigin.protocol === "https:";
+    const hostname = parsedOrigin.hostname.toLowerCase();
+    const isAiStudioOrigin = isHttps && (
+      hostname === "aistudio.google.com" ||
+      hostname.endsWith(".aistudio.google.com") ||
+      hostname === "ai.studio" ||
+      hostname.endsWith(".ai.studio") ||
+      hostname === "googleusercontent.com" ||
+      hostname.endsWith(".googleusercontent.com")
+    );
     const isAllowed = allowedOrigins.has(origin) || isSameOrigin || isAiStudioOrigin;
+
     if (!isAllowed) {
       return res.status(403).json({ error: { code: "CORS_ORIGIN_DENIED", message: "Origem não autorizada." } });
     }
+
     res.setHeader("Access-Control-Allow-Origin", origin);
     res.setHeader("Vary", "Origin");
     res.setHeader("Access-Control-Allow-Headers", "Authorization, Content-Type, X-Idempotency-Key");
