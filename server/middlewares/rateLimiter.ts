@@ -9,8 +9,8 @@ interface RateLimitRecord {
 
 const ipRequestMap = new Map<string, RateLimitRecord>();
 
-// Cleanup stale IP entries every 5 minutes
-setInterval(() => {
+// Cleanup stale IP entries without keeping Node alive during tests/shutdown.
+const cleanupTimer = setInterval(() => {
   const now = Date.now();
   for (const [ip, record] of ipRequestMap.entries()) {
     if (now > record.resetTime) {
@@ -18,17 +18,24 @@ setInterval(() => {
     }
   }
 }, 5 * 60 * 1000);
+cleanupTimer.unref?.();
+
+function getClientIp(req: Request): string {
+  // Express computes req.ip using the configured trust proxy policy.
+  // Never consume X-Forwarded-For directly because it is client-controlled
+  // unless a trusted proxy is explicitly configured in server.ts.
+  return req.ip || req.socket.remoteAddress || 'unknown-ip';
+}
 
 export function rateLimiter(req: Request, res: Response, next: NextFunction) {
-  const clientIp = (req.headers['x-forwarded-for'] as string) || req.socket.remoteAddress || 'unknown-ip';
+  const clientIp = getClientIp(req);
   const now = Date.now();
-
   const record = ipRequestMap.get(clientIp);
 
   if (!record || now > record.resetTime) {
     ipRequestMap.set(clientIp, {
       count: 1,
-      resetTime: now + SERVER_CONFIG.RATE_LIMIT_WINDOW_MS
+      resetTime: now + SERVER_CONFIG.RATE_LIMIT_WINDOW_MS,
     });
     return next();
   }
@@ -38,8 +45,8 @@ export function rateLimiter(req: Request, res: Response, next: NextFunction) {
     return res.status(429).json({
       error: {
         code: 'RATE_LIMIT_EXCEEDED',
-        message: 'Muitas requisições enviadas. Aguarde um minuto antes de tentar novamente.'
-      }
+        message: 'Muitas requisições enviadas. Aguarde um minuto antes de tentar novamente.',
+      },
     });
   }
 
