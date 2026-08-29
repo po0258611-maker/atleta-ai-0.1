@@ -3,7 +3,6 @@ import {
   UserProfile,
   Exercise,
   SetLog,
-  FatigueAssessment,
 } from '../types';
 import { OneRepMaxCalculator, OneRepMaxResult } from './oneRepMaxService';
 import { BodyCompositionService, BodyCompositionTarget } from './bodyCompositionService';
@@ -42,7 +41,7 @@ export interface AutoAdjustmentRecommendation {
 }
 
 export interface PeriodizationAnalysis {
-  acwrRatio: number; // Acute-to-Chronic Workload Ratio
+  acwrRatio: number;
   avgRecentRpe: number;
   overallFatigueStatus: 'OPTIMAL' | 'OVERREACHING' | 'UNDERLOADED' | 'CRITICAL_FATIGUE';
   recommendedAction: string;
@@ -59,376 +58,188 @@ export interface IntelligentGoalTarget {
   targetWeightKg: number;
   estimatedWeeksToGoal: number;
   recommendedDailyCalories: number;
-  macroRatio: {
-    proteinGrams: number;
-    carbsGrams: number;
-    fatsGrams: number;
-  };
+  macroRatio: { proteinGrams: number; carbsGrams: number; fatsGrams: number };
   bodyComposition: BodyCompositionTarget;
 }
 
 export class ProgressionEngine {
-  /**
-   * Calculates realistic load increments based on exercise category and equipment.
-   * Avoids universal +2.5kg for everything (e.g. dumbells/lateral raises vs barbell squats).
-   */
-  static calculateLoadIncrement(
-    currentWeightKg: number,
-    exercise?: Partial<Exercise>
-  ): number {
+  static calculateLoadIncrement(currentWeightKg: number, exercise?: Partial<Exercise>): number {
     const equipment = exercise?.equipamento || 'barbell';
     const isIsolation = exercise?.categoria === 'isolation';
-    const isUpper =
-      exercise?.grupoMuscular === 'biceps' ||
-      exercise?.grupoMuscular === 'triceps' ||
-      exercise?.grupoMuscular === 'ombros';
-
-    // 1. Dumbbell isolations / Upper body small muscles: smaller steps (1kg - 2kg total or 2-4%)
+    const isUpper = exercise?.grupoMuscular === 'biceps' || exercise?.grupoMuscular === 'triceps' || exercise?.grupoMuscular === 'ombros';
     if (equipment === 'dumbbell' || (isIsolation && isUpper)) {
       if (currentWeightKg <= 12) return 1.0;
       if (currentWeightKg <= 24) return 2.0;
       return 2.0;
     }
-
-    // 2. Cables / Machines: typically 2.5kg to 5kg pin increments
-    if (equipment === 'cable') {
-      return currentWeightKg <= 20 ? 1.25 : 2.5;
-    }
-    if (equipment === 'machine') {
-      return 2.5;
-    }
-
-    // 3. Heavy Compound Barbell Lifts (Squat, Deadlift, Bench): 2.5kg to 5kg
+    if (equipment === 'cable') return currentWeightKg <= 20 ? 1.25 : 2.5;
+    if (equipment === 'machine') return currentWeightKg <= 40 ? 2.5 : 5.0;
     if (equipment === 'barbell') {
       if (currentWeightKg >= 100) return 5.0;
       if (currentWeightKg >= 50) return 2.5;
       return 2.0;
     }
-
-    // Default proportional increment (~3% to 5%, rounded to nearest 0.5kg)
-    const proportional = Math.max(1, Math.round((currentWeightKg * 0.04) * 2) / 2);
-    return proportional;
+    return Math.max(0.5, Math.round((currentWeightKg * 0.04) * 2) / 2);
   }
 
-  /**
-   * Evaluates historical performance and fatigue to recommend adaptive progression strategy
-   */
   static evaluateAdaptiveProgression(
     exercise: Exercise | { id: string; nome: string; equipamento?: any; categoria?: any; grupoMuscular?: any },
     recentSets: SetLog[],
-    targetRepRangeStr: string = '8-12',
-    targetRIR: number = 2,
-    recentFatigueScore: number = 40
+    targetRepRangeStr = '8-12',
+    targetRIR = 2,
+    recentFatigueScore = 40
   ): AdaptiveProgressionDecision {
     const parsedRange = targetRepRangeStr.split('-').map((n) => parseInt(n.trim(), 10));
-    const minReps = !isNaN(parsedRange[0]) ? parsedRange[0] : 8;
-    const maxReps = parsedRange.length > 1 && !isNaN(parsedRange[1]) ? parsedRange[1] : 12;
-
-    // Calculate real e1RM from sets using verified Epley formula
+    const minReps = Number.isFinite(parsedRange[0]) ? Math.max(1, parsedRange[0]) : 8;
+    const maxReps = parsedRange.length > 1 && Number.isFinite(parsedRange[1]) ? Math.max(minReps, parsedRange[1]) : 12;
     const oneRepMax = OneRepMaxCalculator.calculateFromSets(recentSets || []);
 
-    if (!recentSets || recentSets.length === 0) {
+    if (!recentSets?.length) {
       return {
-        strategy: 'MAINTENANCE',
-        exerciseName: exercise.nome,
-        currentWeightKg: 20,
-        recommendedWeightKg: 20,
-        weightDeltaKg: 0,
-        targetRepRange: `${minReps}-${maxReps}`,
-        recommendedTargetReps: `${minReps}`,
-        targetRIR,
-        action: 'maintain',
-        badge: 'LINHA DE BASE',
-        reason: 'Primeira sessão do ciclo. Estabeleça uma carga de referência mantendo o RIR prescrito.',
-        oneRepMax,
+        strategy: 'MAINTENANCE', exerciseName: exercise.nome, currentWeightKg: 20, recommendedWeightKg: 20, weightDeltaKg: 0,
+        targetRepRange: `${minReps}-${maxReps}`, recommendedTargetReps: `${minReps}`, targetRIR, action: 'maintain', badge: 'LINHA DE BASE',
+        reason: 'Primeira sessão do ciclo. Estabeleça uma carga de referência mantendo o RIR prescrito.', oneRepMax,
       };
     }
 
-    const currentWeight = recentSets[0].weightKg || 20;
-    const completedSets = recentSets.filter((s) => s.completed);
-    const allSetsCompleted = completedSets.length === recentSets.length;
-    const avgReps = Math.round(recentSets.reduce((sum, s) => sum + (s.repsDone || 0), 0) / recentSets.length);
-    const avgActualRIR = Math.round(
-      (recentSets.reduce((sum, s) => sum + (typeof s.actualRIR === 'number' ? s.actualRIR : targetRIR), 0) /
-        recentSets.length) *
-        10
-    ) / 10;
+    const completedSets = recentSets.filter((s) => s.completed && Number.isFinite(s.repsDone) && s.repsDone > 0);
+    if (!completedSets.length) {
+      return {
+        strategy: 'MAINTENANCE', exerciseName: exercise.nome, currentWeightKg: recentSets[0]?.weightKg || 20, recommendedWeightKg: recentSets[0]?.weightKg || 20,
+        weightDeltaKg: 0, targetRepRange: `${minReps}-${maxReps}`, recommendedTargetReps: `${minReps}`, targetRIR,
+        action: 'maintain', badge: 'SEM DADOS VÁLIDOS', reason: 'Nenhuma série concluída com dados válidos. Repita a sessão antes de alterar a carga.', oneRepMax,
+      };
+    }
 
-    // Check performance drop (< min reps on multiple sets)
-    const missedMinReps = recentSets.filter((s) => (s.repsDone || 0) < minReps).length;
-    const isPerformanceCrashing = missedMinReps >= 2;
+    const currentWeight = Math.max(0, completedSets[0].weightKg || recentSets[0].weightKg || 20);
+    const avgReps = completedSets.reduce((sum, s) => sum + s.repsDone, 0) / completedSets.length;
+    const avgActualRIR = completedSets.reduce((sum, s) => sum + (Number.isFinite(s.actualRIR) ? s.actualRIR : targetRIR), 0) / completedSets.length;
+    const missedMinReps = completedSets.filter((s) => s.repsDone < minReps).length;
+    const isPerformanceCrashing = completedSets.length >= 2 && missedMinReps >= Math.ceil(completedSets.length / 2);
 
-    // Case 1: High systemic fatigue / Deload required
     if (recentFatigueScore >= 80) {
-      const deloadWeight = Math.round((currentWeight * 0.85) * 2) / 2;
+      const deloadWeight = Math.max(0, Math.round(currentWeight * 0.85 * 2) / 2);
       return {
-        strategy: 'DELOAD_CONSIDERATION',
-        exerciseName: exercise.nome,
-        currentWeightKg: currentWeight,
-        recommendedWeightKg: deloadWeight,
-        weightDeltaKg: Math.round((deloadWeight - currentWeight) * 10) / 10,
-        targetRepRange: `${minReps}-${maxReps}`,
-        recommendedTargetReps: `${minReps}`,
-        targetRIR: targetRIR + 2,
-        action: 'deload',
-        badge: 'DELOAD ATIVO',
-        reason: `Fadiga fisiológica alta detectada (${recentFatigueScore}/100). Reduza a carga em ~15% e mantenha RIR ${targetRIR + 2} para dissipar fadiga neuromuscular.`,
-        fatigueWarning: 'Evite buscar falha concêntrica enquanto a recuperação não for restabelecida.',
-        oneRepMax,
+        strategy: 'DELOAD_CONSIDERATION', exerciseName: exercise.nome, currentWeightKg: currentWeight, recommendedWeightKg: deloadWeight,
+        weightDeltaKg: Math.round((deloadWeight - currentWeight) * 10) / 10, targetRepRange: `${minReps}-${maxReps}`,
+        recommendedTargetReps: `${minReps}`, targetRIR: Math.min(4, targetRIR + 2), action: 'deload', badge: 'DELOAD ATIVO',
+        reason: `Fadiga elevada (${Math.round(recentFatigueScore)}/100). Reduza carga e volume temporariamente e priorize recuperação.`,
+        fatigueWarning: 'Evite falha concêntrica até a recuperação melhorar.', oneRepMax,
       };
     }
 
-    // Case 2: Performance regression under normal/high fatigue -> Investigate fatigue before adding volume
     if (isPerformanceCrashing) {
-      if (recentFatigueScore >= 60 || avgActualRIR === 0) {
+      if (recentFatigueScore >= 60 || avgActualRIR <= 0.5) {
         return {
-          strategy: 'REGRESSION',
-          exerciseName: exercise.nome,
-          currentWeightKg: currentWeight,
-          recommendedWeightKg: currentWeight,
-          weightDeltaKg: 0,
-          targetRepRange: `${minReps}-${maxReps}`,
-          recommendedTargetReps: `${minReps}`,
-          targetRIR: targetRIR + 1,
-          action: 'maintain',
-          badge: 'INVESTIGAR FADIGA',
-          reason: `Queda de repetições detectada abaixo de ${minReps} reps com RIR 0. O declínio indica acúmulo de fadiga local/central. Não aumente volume; recupere antes de subir cargas.`,
-          fatigueWarning: 'Priorize sono e descanso entre sessões.',
-          oneRepMax,
+          strategy: 'REGRESSION', exerciseName: exercise.nome, currentWeightKg: currentWeight, recommendedWeightKg: currentWeight,
+          weightDeltaKg: 0, targetRepRange: `${minReps}-${maxReps}`, recommendedTargetReps: `${minReps}`, targetRIR: Math.min(3, targetRIR + 1),
+          action: 'maintain', badge: 'INVESTIGAR FADIGA',
+          reason: `O desempenho caiu abaixo de ${minReps} repetições em parte relevante das séries. Mantenha a carga e reduza a exigência até recuperar.`,
+          fatigueWarning: 'Verifique sono, estresse, dor e recuperação entre sessões.', oneRepMax,
         };
       }
-
-      // If just too heavy, slight load regression (-5%)
-      const reducedWeight = Math.max(2, Math.round((currentWeight * 0.95) * 2) / 2);
+      const reducedWeight = Math.max(2, Math.round(currentWeight * 0.95 * 2) / 2);
       return {
-        strategy: 'REGRESSION',
-        exerciseName: exercise.nome,
-        currentWeightKg: currentWeight,
-        recommendedWeightKg: reducedWeight,
-        weightDeltaKg: Math.round((reducedWeight - currentWeight) * 10) / 10,
-        targetRepRange: `${minReps}-${maxReps}`,
-        recommendedTargetReps: `${minReps}`,
-        targetRIR,
-        action: 'decrease_load',
-        badge: 'AJUSTE DE CARGA',
-        reason: `A carga de ${currentWeight}kg excedeu a capacidade para a faixa ${minReps}-${maxReps}. Reduzido para ${reducedWeight}kg para retomar padrão de excelência técnica.`,
-        oneRepMax,
+        strategy: 'REGRESSION', exerciseName: exercise.nome, currentWeightKg: currentWeight, recommendedWeightKg: reducedWeight,
+        weightDeltaKg: Math.round((reducedWeight - currentWeight) * 10) / 10, targetRepRange: `${minReps}-${maxReps}`,
+        recommendedTargetReps: `${minReps}`, targetRIR, action: 'decrease_load', badge: 'AJUSTE DE CARGA',
+        reason: `A carga atual não sustenta a faixa ${minReps}-${maxReps}. Reduza ~5% para recuperar execução e repetições.`, oneRepMax,
       };
     }
 
-    // Case 3: Double Progression Success — Top of rep range hit with valid RIR
-    const allHitMaxReps = allSetsCompleted && recentSets.every((s) => (s.repsDone || 0) >= maxReps);
-    const validRirForProgression = avgActualRIR >= 1; // Not grinding at RIR 0 in every set
-
+    const allHitMaxReps = completedSets.length === recentSets.length && completedSets.every((s) => s.repsDone >= maxReps);
+    const validRirForProgression = avgActualRIR >= 1;
     if (allHitMaxReps && validRirForProgression) {
       const increment = this.calculateLoadIncrement(currentWeight, exercise);
-      const newWeight = currentWeight + increment;
-
+      const newWeight = Math.round((currentWeight + increment) * 2) / 2;
       return {
-        strategy: 'DOUBLE_PROGRESSION',
-        exerciseName: exercise.nome,
-        currentWeightKg: currentWeight,
-        recommendedWeightKg: newWeight,
-        weightDeltaKg: increment,
-        targetRepRange: `${minReps}-${maxReps}`,
-        recommendedTargetReps: `${minReps}`,
-        targetRIR,
-        action: 'increase_load',
-        badge: 'SUBIR CARGA',
-        reason: `Excelente! Você completou ${maxReps} reps em todas as séries com RIR seguro (${avgActualRIR}). Aumente +${increment}kg (para ${newWeight}kg) e retorne para ${minReps} reps.`,
-        oneRepMax,
+        strategy: 'DOUBLE_PROGRESSION', exerciseName: exercise.nome, currentWeightKg: currentWeight, recommendedWeightKg: newWeight,
+        weightDeltaKg: increment, targetRepRange: `${minReps}-${maxReps}`, recommendedTargetReps: `${minReps}`, targetRIR,
+        action: 'increase_load', badge: 'SUBIR CARGA',
+        reason: `Todas as séries chegaram a ${maxReps} reps com RIR médio ${avgActualRIR.toFixed(1)}. Aumente a carga e volte ao início da faixa.`, oneRepMax,
       };
     }
 
-    // Case 4: Rep Progression — Inside rep bracket, building volume with current load
     if (avgReps < maxReps) {
-      const nextTargetReps = Math.min(maxReps, avgReps + 1);
+      const nextTargetReps = Math.max(minReps, Math.min(maxReps, Math.floor(avgReps) + 1));
       return {
-        strategy: 'REP_PROGRESSION',
-        exerciseName: exercise.nome,
-        currentWeightKg: currentWeight,
-        recommendedWeightKg: currentWeight,
-        weightDeltaKg: 0,
-        targetRepRange: `${minReps}-${maxReps}`,
-        recommendedTargetReps: `${nextTargetReps}`,
-        targetRIR,
-        action: 'increase_reps',
-        badge: 'BUSCAR +1 REP',
-        reason: `Mantenha a carga de ${currentWeight}kg. Sua meta na próxima sessão é buscar +1 repetição por série (meta: ${nextTargetReps} reps) antes de progredir a carga.`,
-        oneRepMax,
-      };
-    }
-
-    // Case 5: Maintenance
-    return {
-      strategy: 'MAINTENANCE',
-      exerciseName: exercise.nome,
-      currentWeightKg: currentWeight,
-      recommendedWeightKg: currentWeight,
-      weightDeltaKg: 0,
-      targetRepRange: `${minReps}-${maxReps}`,
-      recommendedTargetReps: `${avgReps}`,
-      targetRIR,
-      action: 'maintain',
-      badge: 'ESTABILIZAÇÃO',
-      reason: `Consolide a técnica com ${currentWeight}kg a RIR ${targetRIR} mantendo ${avgReps} repetições limpas.`,
-      oneRepMax,
-    };
-  }
-
-  /**
-   * Real-time intra-session auto-regulation for next set based on instantaneous RPE feedback
-   */
-  static calculateSetAutoAdjustment(
-    exerciseName: string,
-    currentWeightKg: number,
-    repsCompleted: number,
-    rpeReported: number
-  ): AutoAdjustmentRecommendation {
-    if (rpeReported >= 9.5) {
-      const newWeight = Math.max(2, Math.round((currentWeightKg * 0.95) * 2) / 2);
-      const delta = Math.round((newWeight - currentWeightKg) * 10) / 10;
-      return {
-        type: 'LOAD_REDUCTION',
-        exerciseName,
-        recommendedWeightKg: newWeight,
-        weightDeltaKg: delta,
-        reason: `RPE ${rpeReported} muito elevado (RIR 0). Carga reduzida em 5% (${delta}kg) para preservar a integridade técnica nas próximas séries.`,
-        badge: 'AUTORREGULAÇÃO',
-      };
-    }
-
-    if (rpeReported <= 6.5 && repsCompleted >= 8) {
-      const delta = currentWeightKg <= 20 ? 1.0 : 2.5;
-      const newWeight = currentWeightKg + delta;
-      return {
-        type: 'LOAD_BOOST',
-        exerciseName,
-        recommendedWeightKg: newWeight,
-        weightDeltaKg: delta,
-        reason: `RPE ${rpeReported} leve (RIR 3+). Carga aumentada em +${delta}kg para manter o estímulo na zona hipertrófica ideal.`,
-        badge: 'ESTÍMULO ÓTIMO',
+        strategy: 'REP_PROGRESSION', exerciseName: exercise.nome, currentWeightKg: currentWeight, recommendedWeightKg: currentWeight,
+        weightDeltaKg: 0, targetRepRange: `${minReps}-${maxReps}`, recommendedTargetReps: `${nextTargetReps}`, targetRIR,
+        action: 'increase_reps', badge: 'BUSCAR +1 REP',
+        reason: `Mantenha ${currentWeight}kg e busque chegar a ${nextTargetReps} reps antes de aumentar a carga.`, oneRepMax,
       };
     }
 
     return {
-      type: 'OPTIMAL_MAINTAIN',
-      exerciseName,
-      recommendedWeightKg: currentWeightKg,
-      weightDeltaKg: 0,
-      reason: `RPE ${rpeReported} calibrado (RIR 1-2). Mantenha ${currentWeightKg}kg na próxima série.`,
-      badge: 'CARGA OTIMIZADA',
+      strategy: 'MAINTENANCE', exerciseName: exercise.nome, currentWeightKg: currentWeight, recommendedWeightKg: currentWeight, weightDeltaKg: 0,
+      targetRepRange: `${minReps}-${maxReps}`, recommendedTargetReps: `${Math.round(avgReps)}`, targetRIR, action: 'maintain', badge: 'ESTABILIZAÇÃO',
+      reason: `Consolide a carga de ${currentWeight}kg com execução consistente e RIR próximo de ${targetRIR}.`, oneRepMax,
     };
   }
 
-  /**
-   * Analyzes workout history to determine ACWR, Deload triggers, and real 1RM calculations.
-   * NEVER invents default 1RM values when logs are absent.
-   */
+  static calculateSetAutoAdjustment(exerciseName: string, currentWeightKg: number, repsCompleted: number, rpeReported: number): AutoAdjustmentRecommendation {
+    const weight = Math.max(0, currentWeightKg);
+    const rpe = Math.min(10, Math.max(0, rpeReported));
+    if (rpe >= 9.5) {
+      const newWeight = Math.max(2, Math.round(weight * 0.95 * 2) / 2);
+      return { type: 'LOAD_REDUCTION', exerciseName, recommendedWeightKg: newWeight, weightDeltaKg: Math.round((newWeight - weight) * 10) / 10, reason: `RPE ${rpe.toFixed(1)} alto. Reduza aproximadamente 5% para preservar técnica.`, badge: 'AUTORREGULAÇÃO' };
+    }
+    if (rpe <= 6.5 && repsCompleted >= 8) {
+      const delta = Math.max(0.5, Math.min(2.5, weight * 0.025));
+      const newWeight = Math.round((weight + delta) * 2) / 2;
+      const actualDelta = Math.round((newWeight - weight) * 10) / 10;
+      return { type: 'LOAD_BOOST', exerciseName, recommendedWeightKg: newWeight, weightDeltaKg: actualDelta, reason: `RPE ${rpe.toFixed(1)} baixo para o desempenho observado. Aumente levemente a carga na próxima série.`, badge: 'ESTÍMULO ÓTIMO' };
+    }
+    return { type: 'OPTIMAL_MAINTAIN', exerciseName, recommendedWeightKg: weight, weightDeltaKg: 0, reason: `RPE ${rpe.toFixed(1)} compatível com uma série produtiva. Mantenha a carga.`, badge: 'CARGA OTIMIZADA' };
+  }
+
   static analyzePeriodization(logs: WorkoutLog[]): PeriodizationAnalysis {
-    const squat1RM = OneRepMaxCalculator.calculateFromHistory('agachamento', logs);
-    const bench1RM = OneRepMaxCalculator.calculateFromHistory('supino', logs);
-    const deadlift1RM = OneRepMaxCalculator.calculateFromHistory('terra', logs);
-    const overhead1RM = OneRepMaxCalculator.calculateFromHistory('desenvolvimento', logs);
+    const safeLogs = [...(logs || [])].filter((l) => l && !Number.isNaN(Date.parse(l.date))).sort((a, b) => Date.parse(b.date) - Date.parse(a.date));
+    const squat1RM = OneRepMaxCalculator.calculateFromHistory('agachamento', safeLogs);
+    const bench1RM = OneRepMaxCalculator.calculateFromHistory('supino', safeLogs);
+    const deadlift1RM = OneRepMaxCalculator.calculateFromHistory('terra', safeLogs);
+    const overhead1RM = OneRepMaxCalculator.calculateFromHistory('desenvolvimento', safeLogs);
 
-    if (!logs || logs.length === 0) {
-      return {
-        acwrRatio: 1.0,
-        avgRecentRpe: 8.0,
-        overallFatigueStatus: 'OPTIMAL',
-        recommendedAction: 'Continue no plano atual de sobrecarga progressiva linear e dupla.',
-        isDeloadNeeded: false,
-        estimated1RM: {
-          squat: squat1RM,
-          bench: bench1RM,
-          deadlift: deadlift1RM,
-          overhead: overhead1RM,
-        },
-      };
+    if (!safeLogs.length) {
+      return { acwrRatio: 1, avgRecentRpe: 8, overallFatigueStatus: 'OPTIMAL', recommendedAction: 'Sem histórico suficiente para periodização. Estabeleça uma base de 2–4 semanas.', isDeloadNeeded: false, estimated1RM: { squat: squat1RM, bench: bench1RM, deadlift: deadlift1RM, overhead: overhead1RM } };
     }
 
-    const getLogVolume = (log: WorkoutLog): number => {
-      let total = 0;
-      log.exerciseLogs?.forEach((ex) => {
-        ex.sets?.forEach((s) => {
-          if (s.completed) {
-            total += (s.repsDone || 0) * (s.weightKg || 0);
-          }
-        });
-      });
-      return total || 0;
-    };
+    const volumeOf = (log: WorkoutLog) => log.exerciseLogs?.reduce((total, ex) => total + (ex.sets || []).reduce((s, set) => set.completed ? s + Math.max(0, set.repsDone || 0) * Math.max(0, set.weightKg || 0) : s, 0), 0) || 0;
+    const now = Date.now();
+    const acuteCutoff = now - 7 * 24 * 60 * 60 * 1000;
+    const chronicCutoff = now - 28 * 24 * 60 * 60 * 1000;
+    const acuteLogs = safeLogs.filter((l) => Date.parse(l.date) >= acuteCutoff);
+    const chronicLogs = safeLogs.filter((l) => Date.parse(l.date) >= chronicCutoff);
+    const acuteWeeklyLoad = acuteLogs.reduce((sum, l) => sum + volumeOf(l), 0);
+    const chronicWeeklyAverage = chronicLogs.length ? chronicLogs.reduce((sum, l) => sum + volumeOf(l), 0) / 4 : 0;
+    const acwrRatio = chronicWeeklyAverage > 0 ? Math.round((acuteWeeklyLoad / chronicWeeklyAverage) * 100) / 100 : 1;
 
-    const acuteVolume = logs.slice(0, 3).reduce((sum, log) => sum + getLogVolume(log), 0);
-    const totalVolumeAll = logs.reduce((sum, log) => sum + getLogVolume(log), 0);
-    const chronicVolume = totalVolumeAll > 0 ? (totalVolumeAll / logs.length) * 3 : 1;
-
-    const acwrRatio = chronicVolume > 0 ? Math.round((acuteVolume / chronicVolume) * 100) / 100 : 1.0;
-
-    const recentRpes = logs.slice(0, 4).map((l) => l.sessionRPE || 8);
-    const avgRecentRpe = Math.round((recentRpes.reduce((a, b) => a + b, 0) / (recentRpes.length || 1)) * 10) / 10;
+    const recentRpes = safeLogs.filter((l) => Date.parse(l.date) >= acuteCutoff).map((l) => Number.isFinite(l.sessionRPE) ? l.sessionRPE : 8).slice(0, 4);
+    const avgRecentRpe = recentRpes.length ? Math.round((recentRpes.reduce((a, b) => a + b, 0) / recentRpes.length) * 10) / 10 : 8;
 
     let overallFatigueStatus: PeriodizationAnalysis['overallFatigueStatus'] = 'OPTIMAL';
     let isDeloadNeeded = false;
-    let recommendedAction = 'Sua capacidade de recuperação está otimizada. Mantenha progressão de cargas e repetições.';
-
-    if (acwrRatio > 1.35 || avgRecentRpe >= 9.0) {
-      overallFatigueStatus = 'CRITICAL_FATIGUE';
-      isDeloadNeeded = true;
-      recommendedAction = 'DELOAD ESTRATÉGICO RECOMENDADO: Reduza o número de séries em 40% e a carga em 15% durante 7 dias para evitar overtraining.';
-    } else if (acwrRatio > 1.2) {
+    let recommendedAction = 'Mantenha a progressão e monitore desempenho, sono e percepção de esforço.';
+    if (acwrRatio > 1.35 || avgRecentRpe >= 9.5) {
+      overallFatigueStatus = 'CRITICAL_FATIGUE'; isDeloadNeeded = true;
+      recommendedAction = 'Considere um deload temporário, reduzindo volume e/ou carga, e reavalie após a recuperação.';
+    } else if (acwrRatio > 1.2 || avgRecentRpe >= 9.0) {
       overallFatigueStatus = 'OVERREACHING';
-      recommendedAction = 'Sobrecarga acumulada alta. Monitore a qualidade do sono e a hidratação pós-treino.';
+      recommendedAction = 'Reduza progressão agressiva e monitore recuperação antes de aumentar volume.';
     } else if (acwrRatio < 0.8) {
       overallFatigueStatus = 'UNDERLOADED';
-      recommendedAction = 'Volume recente abaixo do limiar de adaptação. Aumente a regularidade das sessões.';
+      recommendedAction = 'O volume recente está baixo em relação ao histórico disponível. Aumente gradualmente, não de forma abrupta.';
     }
 
-    return {
-      acwrRatio,
-      avgRecentRpe,
-      overallFatigueStatus,
-      recommendedAction,
-      isDeloadNeeded,
-      estimated1RM: {
-        squat: squat1RM,
-        bench: bench1RM,
-        deadlift: deadlift1RM,
-        overhead: overhead1RM,
-      },
-    };
+    return { acwrRatio, avgRecentRpe, overallFatigueStatus, recommendedAction, isDeloadNeeded, estimated1RM: { squat: squat1RM, bench: bench1RM, deadlift: deadlift1RM, overhead: overhead1RM } };
   }
 
-  /**
-   * Calculates intelligent nutritional targets and training direction for user profile
-   * without fabricating arbitrary universal body fat targets (12%, 14%, 15%).
-   */
-  static calculateIntelligentGoals(
-    profile: UserProfile,
-    userSpecifiedBodyFatGoal?: number | null
-  ): IntelligentGoalTarget {
+  static calculateIntelligentGoals(profile: UserProfile, userSpecifiedBodyFatGoal?: number | null): IntelligentGoalTarget {
     const isHypertrophy = profile.objective === 'hypertrophy' || profile.objective === 'strength';
     const isLoss = profile.objective === 'fat_loss';
-
-    const targetWeightKg = isHypertrophy
-      ? Math.round((profile.weightKg + 3) * 10) / 10
-      : isLoss
-      ? Math.round((profile.weightKg - 4) * 10) / 10
-      : profile.weightKg;
-
-    const estimatedWeeksToGoal = isHypertrophy ? 12 : isLoss ? 10 : 8;
-
-    const bodyComposition = BodyCompositionService.evaluateBodyCompositionTarget(
-      profile,
-      userSpecifiedBodyFatGoal
-    );
-
-    return {
-      targetWeightKg,
-      estimatedWeeksToGoal,
-      recommendedDailyCalories: bodyComposition.nutritionalRecommendation.recommendedDailyCalories,
-      macroRatio: bodyComposition.nutritionalRecommendation.macroRatio,
-      bodyComposition,
-    };
+    const targetWeightKg = isHypertrophy ? Math.round((profile.weightKg + Math.max(1, profile.weightKg * 0.025)) * 10) / 10 : isLoss ? Math.max(25, Math.round((profile.weightKg * 0.95) * 10) / 10) : profile.weightKg;
+    const estimatedWeeksToGoal = isHypertrophy ? 12 : isLoss ? 8 : 8;
+    const bodyComposition = BodyCompositionService.evaluateBodyCompositionTarget(profile, userSpecifiedBodyFatGoal);
+    return { targetWeightKg, estimatedWeeksToGoal, recommendedDailyCalories: bodyComposition.nutritionalRecommendation.recommendedDailyCalories, macroRatio: bodyComposition.nutritionalRecommendation.macroRatio, bodyComposition };
   }
 }
