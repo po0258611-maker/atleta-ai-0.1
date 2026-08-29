@@ -1,4 +1,4 @@
-import { initializeApp, getApps, getApp, App } from 'firebase-admin/app';
+import { initializeApp, getApps, App } from 'firebase-admin/app';
 import { getAuth } from 'firebase-admin/auth';
 import { getFirestore, Firestore } from 'firebase-admin/firestore';
 import { logger } from '../middlewares/logger';
@@ -12,16 +12,18 @@ export function getFirebaseAdmin(): App {
     if (existingApps.length > 0 && existingApps[0]) {
       adminApp = existingApps[0];
     } else {
-      const projectId =
-        process.env.FIREBASE_PROJECT_ID?.trim() ||
-        'storied-cable-xn50x';
+      const projectId = process.env.FIREBASE_PROJECT_ID?.trim();
+
+      if (!projectId) {
+        throw new Error('FIREBASE_PROJECT_ID is required to initialize Firebase Admin SDK.');
+      }
 
       try {
-        // Credentials are resolved by the Firebase Admin SDK from the runtime
-        // environment (ADC/service account). No private credential is stored in the repository.
+        // Credentials are resolved by the runtime (ADC/service account).
+        // No private credential is stored in the repository.
         adminApp = initializeApp({ projectId });
         logger.info('Firebase Admin SDK initialized', { projectId });
-      } catch (err: any) {
+      } catch (err: unknown) {
         logger.error('Erro ao inicializar Firebase Admin SDK', {
           error: err instanceof Error ? err.message : 'Unknown error',
         });
@@ -29,13 +31,13 @@ export function getFirebaseAdmin(): App {
       }
     }
   }
+
   return adminApp;
 }
 
 export function getAdminFirestore(): Firestore {
   if (!adminFirestore) {
-    const app = getFirebaseAdmin();
-    adminFirestore = getFirestore(app);
+    adminFirestore = getFirestore(getFirebaseAdmin());
   }
   return adminFirestore;
 }
@@ -49,9 +51,7 @@ export interface DecodedAthleteToken {
   role?: string;
 }
 
-/**
- * Validates a Firebase ID Token securely on the server side.
- */
+/** Validates a Firebase ID Token on the server side. */
 export async function verifyFirebaseIdToken(idToken: string): Promise<DecodedAthleteToken> {
   const app = getFirebaseAdmin();
   const auth = getAuth(app);
@@ -66,7 +66,7 @@ export async function verifyFirebaseIdToken(idToken: string): Promise<DecodedAth
       email_verified: decoded.email_verified,
       role: (decoded.role as string) || 'ATHLETE',
     };
-  } catch (error: any) {
+  } catch (error: unknown) {
     logger.warn('Token Firebase inválido ou expirado', {
       error: error instanceof Error ? error.message : 'Unknown error',
     });
