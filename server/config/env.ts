@@ -9,13 +9,25 @@ const defaultOrigins = isProduction
 const corsOrigins = (process.env.CORS_ORIGINS ? process.env.CORS_ORIGINS.split(',') : defaultOrigins)
   .map((s) => s.trim()).filter(Boolean);
 
-// Payment configuration is intentionally preserved; live secrets are required
-// only when PAYMENT_MODE=live.
-const paymentMode = process.env.PAYMENT_MODE?.trim() === 'live' ? 'live' : 'mock';
-const stripeWebhookSecret = process.env.STRIPE_WEBHOOK_SECRET?.trim() || '';
-const pixWebhookSecret = process.env.PIX_WEBHOOK_SECRET?.trim() || '';
+/**
+ * Optional runtime environment access.
+ *
+ * AI Studio prompts for environment variables that it can statically associate
+ * with direct process.env.PROPERTY accesses. These values are deliberately
+ * optional until the corresponding feature is enabled, so read them through
+ * one typed helper instead of making them startup requirements.
+ */
+function readOptionalEnv(name: string): string {
+  return process.env[name]?.trim() || '';
+}
 
-const appVersion = process.env.APP_VERSION?.trim() || '2.6.0';
+// Payment configuration is intentionally preserved. Live payment processing is
+// opt-in and remains disabled unless explicitly configured with PAYMENT_MODE=live.
+const paymentMode = readOptionalEnv('PAYMENT_MODE') === 'live' ? 'live' : 'mock';
+const stripeWebhookSecret = readOptionalEnv('STRIPE_WEBHOOK_SECRET');
+const pixWebhookSecret = readOptionalEnv('PIX_WEBHOOK_SECRET');
+
+const appVersion = readOptionalEnv('APP_VERSION') || '2.6.0';
 
 if (isProduction && paymentMode === 'live' && (!stripeWebhookSecret || !pixWebhookSecret)) {
   throw new Error('STRIPE_WEBHOOK_SECRET e PIX_WEBHOOK_SECRET são obrigatórios quando PAYMENT_MODE=live.');
@@ -26,15 +38,16 @@ export const SERVER_CONFIG = {
   NODE_ENV,
   APP_VERSION: appVersion,
   CORS_ORIGINS: corsOrigins,
-  GEMINI_MODEL: process.env.GEMINI_MODEL?.trim() || 'gemini-2.5-flash',
-  GEMINI_API_KEY: process.env.GEMINI_API_KEY?.trim() || '',
-  SUPABASE_URL: process.env.SUPABASE_URL?.trim() || '',
-  SUPABASE_ANON_KEY: process.env.SUPABASE_ANON_KEY?.trim() || '',
-  FIREBASE_PROJECT_ID: process.env.FIREBASE_PROJECT_ID?.trim() || '',
+  GEMINI_MODEL: readOptionalEnv('GEMINI_MODEL') || 'gemini-2.5-flash',
+  GEMINI_API_KEY: readOptionalEnv('GEMINI_API_KEY'),
+  SUPABASE_URL: readOptionalEnv('SUPABASE_URL'),
+  SUPABASE_ANON_KEY: readOptionalEnv('SUPABASE_ANON_KEY'),
+  FIREBASE_PROJECT_ID: readOptionalEnv('FIREBASE_PROJECT_ID'),
   PAYMENT_MODE: paymentMode,
   STRIPE_WEBHOOK_SECRET: stripeWebhookSecret,
   PIX_WEBHOOK_SECRET: pixWebhookSecret,
-  TRUST_PROXY: process.env.TRUST_PROXY?.trim() === 'true',
+  TRUST_PROXY: readOptionalEnv('TRUST_PROXY') === 'true',
+  FIRESTORE_ALLOW_MEMORY_FALLBACK: !isProduction && readOptionalEnv('FIRESTORE_ALLOW_MEMORY_FALLBACK') === 'true',
   RATE_LIMIT_WINDOW_MS: 60 * 1000,
   RATE_LIMIT_MAX_REQUESTS: Math.max(1, Number(process.env.RATE_LIMIT_MAX_REQUESTS) || 30),
   MAX_PROMPT_LENGTH: Math.max(100, Number(process.env.MAX_PROMPT_LENGTH) || 4000),
