@@ -12,15 +12,15 @@ export function getFirebaseAdmin(): App {
     if (existingApps.length > 0 && existingApps[0]) {
       adminApp = existingApps[0];
     } else {
-      const projectId =
-        process.env.FIREBASE_PROJECT_ID?.trim() ||
-        'storied-cable-xn50x';
+      const projectId = process.env.FIREBASE_PROJECT_ID?.trim();
 
       try {
         // Credentials are resolved by the runtime (ADC/service account).
-        // No private credential is stored in the repository.
-        adminApp = initializeApp({ projectId });
-        logger.info('Firebase Admin SDK initialized', { projectId });
+        // When FIREBASE_PROJECT_ID is omitted, Firebase Admin resolves the
+        // project from the runtime credentials instead of silently targeting
+        // a repository-specific project.
+        adminApp = projectId ? initializeApp({ projectId }) : initializeApp();
+        logger.info('Firebase Admin SDK initialized', { projectId: projectId || 'runtime-default' });
       } catch (err: unknown) {
         logger.error('Erro ao inicializar Firebase Admin SDK', {
           error: err instanceof Error ? err.message : 'Unknown error',
