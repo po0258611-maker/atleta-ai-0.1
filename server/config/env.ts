@@ -1,23 +1,24 @@
 const NODE_ENV = process.env.NODE_ENV?.trim() || 'development';
 const isProduction = NODE_ENV === 'production';
 
-const defaultOrigins = isProduction ? [] : ['http://localhost:3000', 'https://ai.studio', 'https://aistudio.google.com'];
+// Same-origin deployments do not need CORS_ORIGINS. Cross-origin browser
+// access is allowed only for explicitly configured origins in server.ts.
+const defaultOrigins = isProduction
+  ? []
+  : ['http://localhost:3000', 'https://ai.studio', 'https://aistudio.google.com'];
 const corsOrigins = (process.env.CORS_ORIGINS ? process.env.CORS_ORIGINS.split(',') : defaultOrigins)
   .map((s) => s.trim()).filter(Boolean);
 
+// Payment configuration is intentionally preserved; live secrets are required
+// only when PAYMENT_MODE=live.
 const paymentMode = process.env.PAYMENT_MODE?.trim() === 'live' ? 'live' : 'mock';
 const stripeWebhookSecret = process.env.STRIPE_WEBHOOK_SECRET?.trim() || '';
 const pixWebhookSecret = process.env.PIX_WEBHOOK_SECRET?.trim() || '';
 
 const appVersion = process.env.APP_VERSION?.trim() || '2.6.0';
 
-if (isProduction) {
-  if (corsOrigins.length === 0) throw new Error('CORS_ORIGINS é obrigatório em produção.');
-  if (!process.env.FIREBASE_PROJECT_ID?.trim()) throw new Error('FIREBASE_PROJECT_ID é obrigatório em produção.');
-  if (!process.env.GEMINI_API_KEY?.trim()) throw new Error('GEMINI_API_KEY é obrigatório em produção.');
-  if (paymentMode === 'live' && (!stripeWebhookSecret || !pixWebhookSecret)) {
-    throw new Error('STRIPE_WEBHOOK_SECRET e PIX_WEBHOOK_SECRET são obrigatórios quando PAYMENT_MODE=live.');
-  }
+if (isProduction && paymentMode === 'live' && (!stripeWebhookSecret || !pixWebhookSecret)) {
+  throw new Error('STRIPE_WEBHOOK_SECRET e PIX_WEBHOOK_SECRET são obrigatórios quando PAYMENT_MODE=live.');
 }
 
 export const SERVER_CONFIG = {
