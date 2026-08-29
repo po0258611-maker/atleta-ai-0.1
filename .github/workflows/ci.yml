@@ -34,5 +34,31 @@ jobs:
       - name: Build
         run: npm run build
 
+      - name: Production startup smoke check
+        env:
+          NODE_ENV: production
+          PORT: 4173
+          PAYMENT_MODE: mock
+          CORS_ORIGINS: http://localhost:4173
+          REQUIRE_DATABASE_READINESS: false
+        run: |
+          set -e
+          node server-dist/server.cjs > /tmp/atleta-ai-server.log 2>&1 &
+          SERVER_PID=$!
+          trap 'kill $SERVER_PID 2>/dev/null || true' EXIT
+          for i in $(seq 1 30); do
+            if curl --fail --silent --show-error http://127.0.0.1:4173/api/health >/tmp/health.json; then
+              cat /tmp/health.json
+              exit 0
+            fi
+            if ! kill -0 $SERVER_PID 2>/dev/null; then
+              cat /tmp/atleta-ai-server.log
+              exit 1
+            fi
+            sleep 1
+          done
+          cat /tmp/atleta-ai-server.log
+          exit 1
+
       - name: Tests
         run: npm test
