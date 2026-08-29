@@ -25,6 +25,7 @@ export interface AuthenticatedAthlete {
   email: string;
   displayName: string;
   photoURL?: string;
+  emailVerified: boolean;
   idToken: string;
   profile: UserProfile;
 }
@@ -77,6 +78,7 @@ export const buildAthleteFromFirebaseUser = async (user: User): Promise<Authenti
     email: user.email || 'atleta@google.com',
     displayName: user.displayName || 'Atleta Google',
     photoURL: user.photoURL || undefined,
+    emailVerified: user.emailVerified,
     idToken: token,
     profile: buildProfileFromFirebaseUser(user),
   };
