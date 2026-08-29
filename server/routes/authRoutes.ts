@@ -1,11 +1,15 @@
-import { Router } from 'express';
-import { handleRegister, handleLogin, handleLogout, handleMe } from '../controllers/authController';
-import { authGuard } from '../middlewares/authGuard';
-import { rateLimiter } from '../middlewares/rateLimiter';
+import { Router, Request, Response } from 'express';
+import { requireAuth } from '../middlewares/auth';
 
 export const authRouter = Router();
 
-authRouter.post('/register', rateLimiter, handleRegister);
-authRouter.post('/login', rateLimiter, handleLogin);
-authRouter.post('/logout', authGuard, handleLogout);
-authRouter.get('/me', authGuard, handleMe);
+/**
+ * Firebase is the single authentication authority for the application.
+ * Login, registration and logout are handled by Firebase Client SDK.
+ * The API only validates the Firebase ID token and exposes the authenticated identity.
+ */
+authRouter.get('/me', requireAuth, (req: Request, res: Response) => {
+  return res.json({
+    user: req.athlete,
+  });
+});
