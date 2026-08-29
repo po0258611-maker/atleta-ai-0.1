@@ -4,6 +4,8 @@ import { logger } from '../middlewares/logger';
 import { AISecurityGuard } from './aiSecurityGuard';
 
 let aiInstance: GoogleGenAI | null = null;
+let geminiRateLimitUntil = 0;
+const GEMINI_RATE_LIMIT_COOLDOWN_MS = 60 * 1000;
 
 function getAiClient(): GoogleGenAI | null {
   if (!aiInstance) {
@@ -48,7 +50,6 @@ export function generateDeterministicCoachAnswer(
   const norm = prompt.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
   const atleta = (context?.atleta as Record<string, any>) || {};
   const nomeAtleta = atleta.nome || 'Atleta';
-  const exp = (atleta.experiencia || 'intermediate').toUpperCase();
 
   if (
     norm.includes('dieta') || norm.includes('macro') || norm.includes('gordura') ||
@@ -137,16 +138,31 @@ function isTransientError(err: any): boolean {
   return status === 408 || status === 502 || status === 503 || status === 504;
 }
 
+function isGeminiRateLimitCooldownActive(): boolean {
+  return Date.now() < geminiRateLimitUntil;
+}
+
+function activateGeminiRateLimitCooldown(): void {
+  geminiRateLimitUntil = Date.now() + GEMINI_RATE_LIMIT_COOLDOWN_MS;
+}
+
 /**
- * Retries only transient transport/service failures. A 429 is deliberately NOT
- * retried here because retrying immediately can amplify quota exhaustion.
- * The caller falls back to the deterministic engine instead.
+ * Retries only transient transport/service failures. A 429 is never retried.
+ * After a 429, the backend opens a short circuit so subsequent requests use
+ * the deterministic engine instead of repeatedly hitting an exhausted quota.
  */
 export async function callGeminiWithBackoff<T>(
   apiCall: () => Promise<T>,
   maxAttempts = 2,
   initialDelayMs = 700
 ): Promise<T> {
+  if (isGeminiRateLimitCooldownActive()) {
+    const remainingSeconds = Math.max(1, Math.ceil((geminiRateLimitUntil - Date.now()) / 1000));
+    const cooldownError = new Error(`GEMINI_RATE_LIMIT_COOLDOWN:${remainingSeconds}`);
+    (cooldownError as any).status = 429;
+    throw cooldownError;
+  }
+
   for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
     try {
       return await apiCall();
@@ -155,14 +171,25 @@ export async function callGeminiWithBackoff<T>(
       const isTransient = isTransientError(err);
       const isLastAttempt = attempt >= maxAttempts;
 
-      if (isRateLimit || !isTransient || isLastAttempt) {
-        logger.warn('Gemini request stopped without quota-amplifying retry', {
+      if (isRateLimit) {
+        activateGeminiRateLimitCooldown();
+        logger.warn('Gemini quota exhausted; activating cooldown and deterministic fallback', {
+          attempt,
+          cooldownMs: GEMINI_RATE_LIMIT_COOLDOWN_MS,
+          provider: 'gemini',
+          model: SERVER_CONFIG.GEMINI_MODEL,
+        });
+        throw err;
+      }
+
+      if (!isTransient || isLastAttempt) {
+        logger.warn('Gemini request stopped without retry', {
           attempt,
           maxAttempts,
           provider: 'gemini',
           model: SERVER_CONFIG.GEMINI_MODEL,
-          status: isRateLimit ? 429 : Number(err?.status || err?.statusCode) || undefined,
-          retryable: isTransient && !isRateLimit && !isLastAttempt,
+          status: Number(err?.status || err?.statusCode) || undefined,
+          retryable: false,
         });
         throw err;
       }
@@ -240,7 +267,7 @@ export async function explainPrescriptionResponse(
   const safeReason = reason.replace(/[<>]/g, '').substring(0, 200);
   const ai = getAiClient();
 
-  if (!ai) {
+  if (!ai || isGeminiRateLimitCooldownActive()) {
     return `Prescrição calculada pelo Motor Determinístico: ${targetSets} séries efetivas de ${reps} repetições com RIR ${rir} em ${safeExercise}. O objetivo desta estrutura é maximizar a tensão mecânica e o recrutamento de unidades motoras de alto limiar com fadiga controlada para a fase de ${safeReason}.`;
   }
 
