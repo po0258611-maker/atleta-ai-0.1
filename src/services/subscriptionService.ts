@@ -133,6 +133,31 @@ export const createCardCheckoutSession = async (
 };
 
 export const cancelSubscription = async (uid?: string): Promise<SubscriptionState> => {
+  try {
+    const res = await apiRequest<{ success: boolean; summary: any }>('/api/subscriptions/cancel', {
+      method: 'POST',
+      body: JSON.stringify({ immediate: false }),
+    });
+
+    if (res && res.summary) {
+      const serverState: SubscriptionState = {
+        isSubscribed: res.summary.isSubscribed,
+        planId: res.summary.planSlug === 'APEX_ELITE' ? 'pro_annual' : 'pro_monthly',
+        planName: res.summary.planName,
+        priceBrl: res.summary.priceBrl,
+        status: res.summary.canonicalStatus === 'ACTIVE' || res.summary.status === 'ACTIVE' ? 'active' : 'canceled',
+        billingCycle: res.summary.planSlug === 'APEX_ELITE' ? 'yearly' : 'monthly',
+        renewsAt: res.summary.currentPeriodEnd || new Date().toISOString(),
+        paymentMethod: (res.summary.provider as any) || 'pix',
+        lastPaymentDate: new Date().toISOString(),
+      };
+      localStorage.setItem(STORAGE_SUBSCRIPTION_KEY, JSON.stringify(serverState));
+      return serverState;
+    }
+  } catch (err) {
+    console.warn('Erro ao cancelar assinatura no servidor:', err);
+  }
+
   const current = getCachedSubscriptionState();
   const newState: SubscriptionState = {
     ...current,
@@ -142,6 +167,7 @@ export const cancelSubscription = async (uid?: string): Promise<SubscriptionStat
   localStorage.setItem(STORAGE_SUBSCRIPTION_KEY, JSON.stringify(newState));
   return newState;
 };
+
 
 export const PLAN_CONFIGS = {
   pro_monthly: {

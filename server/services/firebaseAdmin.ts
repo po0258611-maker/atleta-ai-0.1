@@ -1,8 +1,10 @@
 import { initializeApp, getApps, getApp, App } from 'firebase-admin/app';
 import { getAuth } from 'firebase-admin/auth';
+import { getFirestore, Firestore } from 'firebase-admin/firestore';
 import { logger } from '../middlewares/logger';
 
 let adminApp: App | null = null;
+let adminFirestore: Firestore | null = null;
 
 export function getFirebaseAdmin(): App {
   if (!adminApp) {
@@ -10,11 +12,9 @@ export function getFirebaseAdmin(): App {
     if (existingApps.length > 0 && existingApps[0]) {
       adminApp = existingApps[0];
     } else {
-      const projectId = process.env.FIREBASE_PROJECT_ID?.trim();
-
-      if (!projectId) {
-        throw new Error('FIREBASE_PROJECT_ID is required to initialize Firebase Admin SDK.');
-      }
+      const projectId =
+        process.env.FIREBASE_PROJECT_ID?.trim() ||
+        'storied-cable-xn50x';
 
       try {
         // Credentials are resolved by the Firebase Admin SDK from the runtime
@@ -30,6 +30,14 @@ export function getFirebaseAdmin(): App {
     }
   }
   return adminApp;
+}
+
+export function getAdminFirestore(): Firestore {
+  if (!adminFirestore) {
+    const app = getFirebaseAdmin();
+    adminFirestore = getFirestore(app);
+  }
+  return adminFirestore;
 }
 
 export interface DecodedAthleteToken {

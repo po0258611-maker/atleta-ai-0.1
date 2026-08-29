@@ -13,6 +13,10 @@
 import { paymentWebhookService } from '../services/paymentWebhookService';
 import { subscriptionServerRepository } from '../repositories/subscriptionServerRepository';
 import { entitlementService } from '../services/entitlementService';
+import { setFirestoreAdapter, MemoryFirestoreAdapter } from '../repositories/firestoreAdapter';
+import { WebhookSignatureVerifier } from '../services/payments/webhookSignatureVerifier';
+
+setFirestoreAdapter(new MemoryFirestoreAdapter());
 
 async function runSubscriptionTests() {
   console.log('--- INICIANDO TESTES DO SISTEMA SERVER-AUTHORITATIVE DE ASSINATURAS ---');
@@ -24,15 +28,15 @@ async function runSubscriptionTests() {
     const { plan, status, isFallback } = await entitlementService.resolveUserPlan(testUserId);
     console.assert(isFallback === true, 'Novo usuário deve usar fallback gratuito');
     console.assert(plan.slug === 'FREE', 'Plano deve ser FREE');
-    console.assert(status === 'expired', 'Status deve ser expired');
+    console.assert(status === 'FREE', 'Status deve ser FREE');
     console.log('✓ Teste 1: Resolução de Usuário sem Assinatura (Plano FREE padrão)');
   }
 
   // Test 2: Webhook payment_succeeded activates subscription
   {
     const eventId = `evt_test_${Date.now()}`;
-    const webhookResult = await paymentWebhookService.handleWebhook({
-      provider: 'stripe',
+    const payload = {
+      provider: 'stripe' as const,
       eventId,
       eventType: 'payment_succeeded',
       data: {
@@ -40,25 +44,34 @@ async function runSubscriptionTests() {
         customerId: `cus_${testUserId}`,
         subscriptionId: `sub_stripe_${testUserId}`,
         status: 'active',
-        planId: 'PRO',
+        planId: 'PRO' as const,
         amountCents: 1500,
       },
+    };
+    const rawPayload = JSON.stringify(payload);
+    const signature = WebhookSignatureVerifier.generateStripeSignature(rawPayload);
+
+    const webhookResult = await paymentWebhookService.handleWebhook({
+      payload,
+      rawPayload,
+      signatureHeader: signature,
     });
 
     console.assert(webhookResult.processed === true, 'Webhook deve ser processado');
     console.assert(webhookResult.subscription?.status === 'active', 'Status deve ser active');
 
     const { plan, status } = await entitlementService.resolveUserPlan(testUserId);
-    console.assert(plan.slug === 'PREMIUM', 'Plano deve ser elevado para PREMIUM');
-    console.assert(status === 'active', 'Status deve ser active');
+    console.assert(plan.slug === 'PRO', 'Plano deve ser elevado para PRO');
+    console.assert(status === 'ACTIVE', 'Status deve ser ACTIVE');
     console.log('✓ Teste 2: Ativação de Assinatura via Webhook de Pagamento');
   }
+
 
   // Test 3: Webhook Idempotency (Same event sent twice)
   {
     const eventId = `evt_duplicate_${Date.now()}`;
-    const firstCall = await paymentWebhookService.handleWebhook({
-      provider: 'stripe',
+    const payload = {
+      provider: 'stripe' as const,
       eventId,
       eventType: 'payment_succeeded',
       data: {
@@ -67,19 +80,21 @@ async function runSubscriptionTests() {
         subscriptionId: `sub_stripe_${testUserId}`,
         status: 'active',
       },
+    };
+    const rawPayload = JSON.stringify(payload);
+    const signature = WebhookSignatureVerifier.generateStripeSignature(rawPayload);
+
+    const firstCall = await paymentWebhookService.handleWebhook({
+      payload,
+      rawPayload,
+      signatureHeader: signature,
     });
     console.assert(firstCall.reason === 'SUCCESS', 'Primeira chamada deve processar');
 
     const secondCall = await paymentWebhookService.handleWebhook({
-      provider: 'stripe',
-      eventId,
-      eventType: 'payment_succeeded',
-      data: {
-        userId: testUserId,
-        customerId: `cus_${testUserId}`,
-        subscriptionId: `sub_stripe_${testUserId}`,
-        status: 'active',
-      },
+      payload,
+      rawPayload,
+      signatureHeader: signature,
     });
     console.assert(secondCall.reason === 'ALREADY_PROCESSED', 'Segunda chamada deve ser detectada como duplicada');
     console.log('✓ Teste 3: Idempotência de Webhook Protegida');
@@ -88,8 +103,8 @@ async function runSubscriptionTests() {
   // Test 4: Webhook payment_failed transitions status to past_due
   {
     const eventId = `evt_fail_${Date.now()}`;
-    await paymentWebhookService.handleWebhook({
-      provider: 'stripe',
+    const payload = {
+      provider: 'stripe' as const,
       eventId,
       eventType: 'payment_failed',
       data: {
@@ -98,11 +113,20 @@ async function runSubscriptionTests() {
         subscriptionId: `sub_stripe_${testUserId}`,
         status: 'past_due',
       },
+    };
+    const rawPayload = JSON.stringify(payload);
+    const signature = WebhookSignatureVerifier.generateStripeSignature(rawPayload);
+
+    await paymentWebhookService.handleWebhook({
+      payload,
+      rawPayload,
+      signatureHeader: signature,
     });
 
     const { plan, status } = await entitlementService.resolveUserPlan(testUserId);
-    console.assert(status === 'past_due', 'Status deve mudar para past_due');
+    console.assert(status === 'PAST_DUE', 'Status deve mudar para PAST_DUE');
     console.assert(plan.slug === 'FREE', 'past_due não tem acesso premium');
+
     console.log('✓ Teste 4: Transição de Estado para past_due (Bloqueio de Benefícios)');
   }
 

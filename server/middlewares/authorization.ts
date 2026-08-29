@@ -47,38 +47,47 @@ export function requireFeatureEntitlement(feature: FeatureKey) {
     }
 
     const uid = req.athlete.uid;
-    const evaluation = await entitlementService.evaluateAccess(uid, feature);
+    // Operação Atômica única: avalia plano, verifica limites e incrementa uso sob transação
+    try {
+      const evaluation = await entitlementService.consumeFeature(uid, feature);
 
-    if (!evaluation.granted) {
-      logger.warn('Acesso negado por Entitlement / Quota', {
-        uid,
-        feature,
-        reason: evaluation.reason,
-        usage: evaluation.currentUsage,
-        limit: evaluation.limit,
-      });
-
-      const messages: Record<string, string> = {
-        FEATURE_NOT_IN_PLAN: 'Este recurso é exclusivo dos planos PRO e APEX.',
-        MONTHLY_QUOTA_EXCEEDED: 'Limite mensal para este recurso atingido. Faça upgrade para continuar.',
-        SUBSCRIPTION_EXPIRED: 'Sua assinatura expirou. Renove seu plano para continuar.',
-        NO_SUBSCRIPTION: 'Assinatura ativa requerida.',
-      };
-
-      return res.status(403).json({
-        error: {
-          code: evaluation.reason || 'FEATURE_FORBIDDEN',
-          message: messages[evaluation.reason || ''] || 'Acesso não autorizado ao recurso.',
-          planSlug: evaluation.planSlug,
-          currentUsage: evaluation.currentUsage,
+      if (!evaluation.granted) {
+        logger.warn('Acesso negado por Entitlement / Quota', {
+          uid,
+          feature,
+          reason: evaluation.reason,
+          usage: evaluation.currentUsage,
           limit: evaluation.limit,
-          remaining: evaluation.remaining,
+        });
+
+        const messages: Record<string, string> = {
+          FEATURE_NOT_IN_PLAN: 'Este recurso é exclusivo dos planos PRO e APEX.',
+          MONTHLY_QUOTA_EXCEEDED: 'Limite mensal para este recurso atingido. Faça upgrade para continuar.',
+          SUBSCRIPTION_EXPIRED: 'Sua assinatura expirou. Renove seu plano para continuar.',
+          NO_SUBSCRIPTION: 'Assinatura ativa requerida.',
+        };
+
+        return res.status(403).json({
+          error: {
+            code: evaluation.reason || 'FEATURE_FORBIDDEN',
+            message: messages[evaluation.reason || ''] || 'Acesso não autorizado ao recurso.',
+            planSlug: evaluation.planSlug,
+            currentUsage: evaluation.currentUsage,
+            limit: evaluation.limit,
+            remaining: evaluation.remaining,
+          },
+        });
+      }
+
+      return next();
+    } catch (err: any) {
+      logger.error('Erro ao verificar/consumir quota atômica', { uid, feature, error: err.message });
+      return res.status(500).json({
+        error: {
+          code: 'QUOTA_SYSTEM_ERROR',
+          message: 'Erro interno ao validar cotas de uso do sistema.',
         },
       });
     }
-
-    // Safely consume one usage unit on the server
-    await entitlementService.consumeFeature(uid, feature);
-    return next();
   };
 }

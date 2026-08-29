@@ -1,12 +1,40 @@
 @import "tailwindcss";
 
 @layer base {
-  body {
+  :root {
+    --sat: env(safe-area-inset-top, 0px);
+    --sar: env(safe-area-inset-right, 0px);
+    --sab: env(safe-area-inset-bottom, 0px);
+    --sal: env(safe-area-inset-left, 0px);
+  }
+
+  html, body {
     background-color: #09090b;
     color: #f8fafc;
     font-family: system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
     -webkit-font-smoothing: antialiased;
+    min-height: 100vh;
+    min-height: 100dvh;
+    padding-left: var(--sal);
+    padding-right: var(--sar);
   }
+}
+
+/* Safe Area Inset Helpers */
+.pb-safe-nav {
+  padding-bottom: calc(5.5rem + var(--sab));
+}
+
+.pb-safe-nav-compact {
+  padding-bottom: calc(4rem + var(--sab));
+}
+
+.safe-bottom {
+  padding-bottom: var(--sab);
+}
+
+.safe-top {
+  padding-top: var(--sat);
 }
 
 /* Custom Scrollbar for sleek dark experience */

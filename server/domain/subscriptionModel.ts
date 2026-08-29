@@ -1,6 +1,15 @@
-import { FeatureKey } from './planDefinitions';
+import { FeatureKey, PlanSlug } from './planDefinitions';
+
+export type CanonicalSubscriptionStatus =
+  | 'FREE'
+  | 'ACTIVE'
+  | 'PAST_DUE'
+  | 'CANCELED'
+  | 'EXPIRED'
+  | 'TRIAL';
 
 export type SubscriptionStatus =
+  | CanonicalSubscriptionStatus
   | 'active'
   | 'trialing'
   | 'past_due'
@@ -8,19 +17,45 @@ export type SubscriptionStatus =
   | 'expired'
   | 'pending';
 
-export type PaymentProvider = 'stripe' | 'mercadopago' | 'asaas' | 'google_play' | 'pix_direct';
+export function normalizeSubscriptionStatus(status?: string): CanonicalSubscriptionStatus {
+  if (!status) return 'FREE';
+  const upper = status.trim().toUpperCase();
+  switch (upper) {
+    case 'ACTIVE':
+      return 'ACTIVE';
+    case 'TRIAL':
+    case 'TRIALING':
+      return 'TRIAL';
+    case 'PAST_DUE':
+      return 'PAST_DUE';
+    case 'CANCELED':
+    case 'CANCELLED':
+      return 'CANCELED';
+    case 'EXPIRED':
+      return 'EXPIRED';
+    case 'FREE':
+    case 'PENDING':
+    default:
+      return 'FREE';
+  }
+}
+
+export type PaymentProvider = 'stripe' | 'mercadopago' | 'asaas' | 'google_play' | 'pix_direct' | 'pix';
 
 export interface ServerSubscription {
   id: string;
   userId: string;
-  planId: 'FREE' | 'PRO' | 'APEX_ELITE';
+  planId: PlanSlug;
   status: SubscriptionStatus;
   provider: PaymentProvider;
   customerId: string;
   subscriptionId: string;
-  currentPeriodStart: string; // ISO 8601
-  currentPeriodEnd: string;   // ISO 8601
-  cancelAtPeriodEnd: boolean;
+  currentPeriodStart: string; // ISO 8601 - Início
+  currentPeriodEnd: string;   // ISO 8601 - Término
+  cancelAtPeriodEnd: boolean; // Flag de cancelamento ao fim do ciclo
+  canceledAt?: string | null; // Data do pedido de cancelamento
+  renewAt?: string | null;    // Data prevista de renovação automática
+  autoRenew?: boolean;        // Indicador de renovação ativa
   createdAt: string;
   updatedAt: string;
   lastPaymentDate?: string;
@@ -50,3 +85,4 @@ export interface WebhookEventRecord {
   errorReason?: string;
   receivedAt: string;
 }
+

@@ -18,18 +18,16 @@ const metaEnv = typeof import.meta !== 'undefined'
 const supabaseUrl = sanitizeSupabaseUrl(metaEnv?.VITE_SUPABASE_URL);
 const supabaseKey = (metaEnv?.VITE_SUPABASE_ANON_KEY || '').trim();
 
-function assertSupabaseConfig(): void {
-  if (!supabaseUrl || !supabaseKey) {
-    throw new Error(
-      'Supabase não configurado. Defina VITE_SUPABASE_URL e VITE_SUPABASE_ANON_KEY no ambiente do frontend.'
-    );
-  }
+function assertSupabaseConfig(): boolean {
+  return Boolean(supabaseUrl && supabaseKey);
 }
 
 let clientInstance: SupabaseClient | null = null;
 
-export function getSupabaseClient(): SupabaseClient {
-  assertSupabaseConfig();
+export function getSupabaseClient(): SupabaseClient | null {
+  if (!assertSupabaseConfig()) {
+    return null;
+  }
 
   if (!clientInstance) {
     clientInstance = createClient(supabaseUrl, supabaseKey, {
@@ -44,7 +42,13 @@ export function getSupabaseClient(): SupabaseClient {
   return clientInstance;
 }
 
-export const supabase = getSupabaseClient();
+export const supabase = (function() {
+  try {
+    return getSupabaseClient();
+  } catch {
+    return null;
+  }
+})();
 
 export interface SupabaseConnectionStatus {
   connected: boolean;

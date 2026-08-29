@@ -83,8 +83,16 @@ async function startServer() {
   applySecurityHeaders(app);
   applyCors(app);
 
-  // JSON parser with strict payload limit. Malformed JSON is handled by errorHandler.
-  app.use(express.json({ limit: "1mb", strict: true }));
+  // JSON parser with strict payload limit and rawBody capture for webhook verification
+  app.use(
+    express.json({
+      limit: "1mb",
+      strict: true,
+      verify: (req: any, _res, buf) => {
+        req.rawBody = buf.toString("utf8");
+      },
+    })
+  );
   app.use(express.urlencoded({ extended: false, limit: "100kb" }));
 
   // Liveness: only answers whether the Node process is alive.

@@ -49,7 +49,7 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({ onLoginSuccess, isLoad
   };
 
   return (
-    <div className="min-h-screen bg-[#09090b] text-zinc-100 flex flex-col justify-center items-center p-4 relative overflow-hidden">
+    <div className="min-h-screen min-h-[100dvh] bg-[#09090b] text-zinc-100 flex flex-col justify-center items-center p-4 py-8 relative overflow-y-auto">
       {/* Red Ambient Background Glow */}
       <div className="absolute top-1/4 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[600px] h-[400px] bg-rose-600/15 blur-[140px] rounded-full pointer-events-none" />
 

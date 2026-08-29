@@ -36,8 +36,8 @@ export const PremiumGateModal: React.FC<PremiumGateModalProps> = ({
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-md animate-fadeIn">
-      <div className="relative w-full max-w-lg bg-[#0f0f12] border border-rose-500/30 rounded-3xl p-6 sm:p-8 shadow-2xl overflow-hidden space-y-6">
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-black/80 backdrop-blur-md animate-fadeIn overflow-y-auto">
+      <div className="relative w-full max-w-lg bg-[#0f0f12] border border-rose-500/30 rounded-3xl p-5 sm:p-8 shadow-2xl overflow-y-auto space-y-5 my-auto max-h-[92dvh]">
         {/* Subtle Ambient Red Glow */}
         <div className="absolute -top-20 -right-20 w-56 h-56 bg-rose-600/20 rounded-full blur-3xl pointer-events-none" />
 

@@ -31,9 +31,9 @@ export const Header: React.FC<HeaderProps> = ({
   const [userDropdownOpen, setUserDropdownOpen] = useState(false);
 
   return (
-    <header className="bg-[#0f0f12] border-b border-zinc-800/90 text-zinc-100 sticky top-0 z-40 shadow-xl backdrop-blur-md">
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-        <div className="flex items-center justify-between h-16">
+    <header className="bg-[#0f0f12] border-b border-zinc-800/90 text-zinc-100 sticky top-0 z-40 shadow-xl backdrop-blur-md safe-top">
+      <div className="max-w-7xl mx-auto px-3 sm:px-6 lg:px-8">
+        <div className="flex items-center justify-between h-14 sm:h-16">
           
           <div className="flex items-center space-x-3">
             {/* Mobile Menu Hamburger Button */}
@@ -150,7 +150,7 @@ export const Header: React.FC<HeaderProps> = ({
                         className="w-full text-left px-4 py-2 text-xs text-emerald-400 hover:bg-emerald-500/10 flex items-center space-x-2 cursor-pointer transition-colors font-medium"
                       >
                         <Database className="h-4 w-4 text-emerald-400" />
-                        <span>Banco de Dados / API</span>
+                        <span>Central do Banco de Dados & Backup</span>
                       </button>
                     )}
 
@@ -202,15 +202,15 @@ export const Header: React.FC<HeaderProps> = ({
               </button>
             )}
 
-            {/* DB Status Button */}
+            {/* DB Tools Button */}
             {onOpenDatabaseModal && (
               <button
                 onClick={onOpenDatabaseModal}
-                className="hidden sm:flex items-center space-x-1.5 bg-emerald-500/10 hover:bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 px-3 py-2 rounded-xl text-xs font-semibold transition-all cursor-pointer active:scale-95"
-                title="Status do Banco de Dados & API Supabase"
+                className="flex items-center space-x-1.5 bg-emerald-500/10 hover:bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 px-3 py-2 rounded-xl text-xs font-semibold transition-all cursor-pointer active:scale-95"
+                title="Central de Banco de Dados & Ferramentas"
               >
                 <Database className="h-3.5 w-3.5 text-emerald-400" />
-                <span className="hidden lg:inline font-mono text-[11px]">DB Online</span>
+                <span className="hidden sm:inline font-mono text-[11px]">Banco de Dados</span>
               </button>
             )}
 

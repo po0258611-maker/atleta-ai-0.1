@@ -5,8 +5,11 @@
 import { requireRole, requireFeatureEntitlement } from '../middlewares/authorization';
 import { requireAuth } from '../middlewares/auth';
 import { entitlementService } from '../services/entitlementService';
-import { subscriptionRepository } from '../repositories/subscriptionRepository';
+import { subscriptionServerRepository } from '../repositories/subscriptionServerRepository';
+import { setFirestoreAdapter, MemoryFirestoreAdapter } from '../repositories/firestoreAdapter';
 import type { Request, Response, NextFunction } from 'express';
+
+setFirestoreAdapter(new MemoryFirestoreAdapter());
 
 function createMockResponse() {
   const res: Partial<Response> = {};
@@ -102,16 +105,20 @@ async function runRbacTests() {
     const future = new Date(now.getTime() + 30 * 24 * 60 * 60 * 1000);
     
     // Save active backend subscription
-    await subscriptionRepository.saveSubscription({
+    await subscriptionServerRepository.saveSubscription({
       id: `sub_${premiumUid}`,
       userId: premiumUid,
-      planId: 'PREMIUM',
-      status: 'ACTIVE',
+      planId: 'PRO',
+      status: 'active',
+      provider: 'stripe',
+      customerId: `cus_${premiumUid}`,
+      subscriptionId: `sub_stripe_${premiumUid}`,
       currentPeriodStart: now.toISOString(),
       currentPeriodEnd: future.toISOString(),
       cancelAtPeriodEnd: false,
       createdAt: now.toISOString(),
       updatedAt: now.toISOString(),
+      priceBrl: 39.90,
     });
 
     const req = {

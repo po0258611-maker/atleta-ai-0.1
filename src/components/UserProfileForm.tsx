@@ -1,14 +1,18 @@
 import React, { useState } from 'react';
 import { UserProfile, MuscleGroup, Gender, ExperienceLevel, WorkoutGoal, GymEnvironment } from '../types';
-import { User, ShieldAlert, Sparkles, Sliders, Check } from 'lucide-react';
+import { User, ShieldAlert, Sparkles, Sliders, Check, Loader2, Dumbbell, ArrowRight, Database } from 'lucide-react';
 
 interface UserProfileFormProps {
   initialProfile: UserProfile;
-  onSaveProfile: (profile: UserProfile) => void;
+  onSaveProfile?: (profile: UserProfile) => void;
+  onSave?: (profile: UserProfile) => void;
+  onOpenDatabaseModal?: () => void;
 }
 
-export const UserProfileForm: React.FC<UserProfileFormProps> = ({ initialProfile, onSaveProfile }) => {
+export const UserProfileForm: React.FC<UserProfileFormProps> = ({ initialProfile, onSaveProfile, onSave, onOpenDatabaseModal }) => {
   const [profile, setProfile] = useState<UserProfile>(initialProfile);
+  const [isSubmitting, setIsSubmitting] = useState<boolean>(false);
+  const [justGenerated, setJustGenerated] = useState<boolean>(false);
 
   const allMuscles: { id: MuscleGroup; label: string }[] = [
     { id: 'peitoral', label: 'Peitoral' },
@@ -46,9 +50,27 @@ export const UserProfileForm: React.FC<UserProfileFormProps> = ({ initialProfile
     setProfile({ ...profile, priorities: updated });
   };
 
+  const handleTriggerGenerate = async () => {
+    if (isSubmitting) return;
+    setIsSubmitting(true);
+    setJustGenerated(true);
+
+    try {
+      if (typeof onSaveProfile === 'function') {
+        await onSaveProfile(profile);
+      } else if (typeof onSave === 'function') {
+        await onSave(profile);
+      }
+    } catch (err) {
+      console.error('Erro ao gerar prescrição:', err);
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    onSaveProfile(profile);
+    handleTriggerGenerate();
   };
 
   return (
@@ -319,16 +341,81 @@ export const UserProfileForm: React.FC<UserProfileFormProps> = ({ initialProfile
         </div>
 
         {/* Submit */}
-        <div className="pt-4 border-t border-slate-800 flex justify-end">
+        <div className="pt-6 border-t border-slate-800 flex flex-col sm:flex-row items-center justify-between gap-4">
+          <div className="text-xs text-slate-400 flex items-center space-x-2">
+            <Sparkles className="h-4 w-4 text-cyan-400 shrink-0" />
+            <span>O algoritmo ajustará volume, sobrecarga progressiva e faixas de RIR automaticamente.</span>
+          </div>
+
           <button
+            id="generate-workout-btn"
             type="submit"
-            className="bg-gradient-to-r from-cyan-500 to-blue-600 text-slate-950 font-bold px-6 py-3 rounded-xl text-sm shadow-lg shadow-cyan-500/20 hover:from-cyan-400 hover:to-blue-500 transition-all cursor-pointer"
+            disabled={isSubmitting}
+            onClick={(e) => {
+              // Ensure immediate execution if clicked directly
+              if (profile.name?.trim()) {
+                handleTriggerGenerate();
+              }
+            }}
+            className={`w-full sm:w-auto flex items-center justify-center space-x-2.5 font-bold px-7 py-3.5 rounded-xl text-sm shadow-lg transition-all cursor-pointer select-none active:scale-[0.98] ${
+              isSubmitting
+                ? 'bg-cyan-600/50 text-slate-900 cursor-wait'
+                : justGenerated
+                ? 'bg-gradient-to-r from-emerald-500 to-teal-500 text-slate-950 shadow-emerald-500/25 hover:from-emerald-400 hover:to-teal-400'
+                : 'bg-gradient-to-r from-cyan-400 via-cyan-500 to-blue-600 text-slate-950 shadow-cyan-500/25 hover:from-cyan-300 hover:to-blue-500 hover:shadow-cyan-500/40'
+            }`}
           >
-            Gerar Prescrição Inteligente (Workout Engine)
+            {isSubmitting ? (
+              <>
+                <Loader2 className="h-4 w-4 animate-spin text-slate-950" />
+                <span>Calculando Prescrição Inteligente...</span>
+              </>
+            ) : justGenerated ? (
+              <>
+                <Check className="h-4 w-4 text-slate-950 stroke-[3]" />
+                <span>Prescrição Atualizada! Redirecionando...</span>
+              </>
+            ) : (
+              <>
+                <Dumbbell className="h-4 w-4 text-slate-950" />
+                <span>Gerar Prescrição Inteligente (Workout Engine)</span>
+                <ArrowRight className="h-4 w-4 text-slate-950" />
+              </>
+            )}
           </button>
         </div>
 
       </form>
+
+      {/* Database & Backup Management Utility Card */}
+      {onOpenDatabaseModal && (
+        <div className="bg-slate-900/60 border border-slate-800 rounded-2xl p-5 flex flex-col sm:flex-row items-center justify-between gap-4">
+          <div className="flex items-center space-x-3.5">
+            <div className="p-3 bg-emerald-500/10 border border-emerald-500/30 rounded-xl text-emerald-400">
+              <Database className="h-6 w-6" />
+            </div>
+            <div>
+              <div className="text-sm font-bold text-slate-100 flex items-center space-x-2">
+                <span>Central de Banco de Dados & Backups</span>
+                <span className="text-[10px] font-mono font-bold bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 px-2 py-0.5 rounded-full">
+                  Nuvem + Local
+                </span>
+              </div>
+              <p className="text-xs text-slate-400 mt-0.5">
+                Exportação de JSON/CSV, importação de backups, auditoria de integridade e medição de latência.
+              </p>
+            </div>
+          </div>
+          <button
+            type="button"
+            onClick={onOpenDatabaseModal}
+            className="w-full sm:w-auto bg-slate-800 hover:bg-slate-700 text-emerald-400 border border-emerald-500/30 px-4 py-2.5 rounded-xl text-xs font-bold transition-all flex items-center justify-center space-x-2 cursor-pointer shadow-sm"
+          >
+            <Database className="h-4 w-4" />
+            <span>Abrir Central de Ferramentas</span>
+          </button>
+        </div>
+      )}
     </div>
   );
 };

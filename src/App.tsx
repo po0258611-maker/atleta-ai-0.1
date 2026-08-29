@@ -18,7 +18,9 @@ import { DeviceSessionsModal } from './components/DeviceSessionsModal';
 import { BodyMeasurementsModal } from './components/BodyMeasurementsModal';
 import { AchievementsView } from './components/AchievementsView';
 import { PremiumGateModal } from './components/PremiumGateModal';
-import { DatabaseStatusModal } from './components/DatabaseStatusModal';
+import { DatabaseToolsModal } from './components/DatabaseToolsModal';
+import { DatabaseBackupPayload } from './services/databaseToolsService';
+import { FirestoreDataService } from './services/firestoreDataService';
 
 import { exportPlanToPDF } from './services/pdfExporter';
 import { useAuth } from './hooks/useAuth';
@@ -39,7 +41,7 @@ import {
 
 export default function App() {
   const [showSplash, setShowSplash] = useState<boolean>(true);
-  const [isDatabaseModalOpen, setIsDatabaseModalOpen] = useState<boolean>(false);
+  const [isDatabaseToolsModalOpen, setIsDatabaseToolsModalOpen] = useState<boolean>(false);
 
   // 1. Auth Module
   const {
@@ -83,14 +85,51 @@ export default function App() {
   // 4. Workout & Profile Module
   const {
     userProfile,
+    setUserProfile,
     program,
+    setProgram,
     activeDayId,
     setActiveDayId,
     workoutLogs,
+    setWorkoutLogs,
     handleSaveProfile,
     handleRegenerateProgram,
     handleSaveWorkoutLog,
   } = useWorkout(currentUser?.id);
+
+  // Restore and test fixtures handlers
+  const handleRestoreDatabaseBackup = async (payload: DatabaseBackupPayload) => {
+    if (payload.data.profile) {
+      setUserProfile(payload.data.profile);
+      if (currentUser?.id) {
+        await FirestoreDataService.saveUserProfile(currentUser.id, payload.data.profile);
+      }
+    }
+    if (payload.data.workoutProgram) {
+      setProgram(payload.data.workoutProgram);
+      if (currentUser?.id) {
+        await FirestoreDataService.saveActiveWorkout(currentUser.id, payload.data.workoutProgram);
+      }
+    }
+    if (Array.isArray(payload.data.workoutLogs) && payload.data.workoutLogs.length > 0) {
+      setWorkoutLogs(payload.data.workoutLogs);
+      if (currentUser?.id) {
+        for (const log of payload.data.workoutLogs) {
+          await FirestoreDataService.saveWorkoutLog(currentUser.id, log);
+        }
+      }
+    }
+  };
+
+  const handleImportSampleWorkoutLogs = async (samples: typeof workoutLogs) => {
+    const combined = [...samples, ...workoutLogs];
+    setWorkoutLogs(combined);
+    if (currentUser?.id) {
+      for (const log of samples) {
+        await FirestoreDataService.saveWorkoutLog(currentUser.id, log);
+      }
+    }
+  };
 
   // Synchronize profile updates with user account
   const onSaveProfileAndNavigate = async (updatedProfile: typeof userProfile) => {
@@ -155,7 +194,7 @@ export default function App() {
         currentUser={currentUser}
         onOpenAuthModal={() => setIsAuthModalOpen(true)}
         onOpenSubscriptionModal={() => setIsSubscriptionModalOpen(true)}
-        onOpenDatabaseModal={() => setIsDatabaseModalOpen(true)}
+        onOpenDatabaseModal={() => setIsDatabaseToolsModalOpen(true)}
         onLogout={handleLogout}
         onExportPDF={() => exportPlanToPDF({ program, userProfile })}
         onToggleMobileMenu={() => setIsMobileNavOpen(!isMobileNavOpen)}
@@ -193,14 +232,14 @@ export default function App() {
         />
 
         {/* Dynamic Main Content Area */}
-        <div className="flex-1 flex flex-col overflow-y-auto">
-          <main className="p-4 sm:p-6 lg:p-8 space-y-6">
+        <div className="flex-1 flex flex-col overflow-y-auto min-h-0">
+          <main className="p-4 sm:p-6 lg:p-8 space-y-6 pb-28 sm:pb-32 lg:pb-8 pb-safe-nav">
             
             {/* Overview / Dashboard */}
             {activeTab === 'overview' && (
               <div className="space-y-6 animate-fadeIn">
                 {/* Hero / Athlete Welcome Card */}
-                <div className="relative overflow-hidden bg-[#0f0f12] border border-zinc-800 rounded-3xl p-6 sm:p-8 shadow-xl">
+                <div className="relative overflow-hidden bg-[#0f0f12] border border-zinc-800 rounded-3xl p-5 sm:p-8 shadow-xl">
                   <div className="absolute top-0 right-0 w-96 h-96 bg-rose-600/10 blur-[100px] rounded-full pointer-events-none" />
                   
                   <div className="relative z-10 space-y-4">
@@ -242,8 +281,8 @@ export default function App() {
                   </div>
                 </div>
 
-                {/* Quick Metrics Bento Grid */}
-                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+                {/* Quick Metrics Bento Grid (responsive across portrait and landscape) */}
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 landscape:grid-cols-2 md:landscape:grid-cols-4 gap-4">
                   <div className="bg-[#0f0f12] border border-zinc-800 rounded-2xl p-4 space-y-2">
                     <div className="flex items-center justify-between text-zinc-400">
                       <span className="text-xs font-medium">Metodologia</span>
@@ -291,7 +330,9 @@ export default function App() {
             {activeTab === 'assessment' && (
               <UserProfileForm
                 initialProfile={userProfile}
+                onSaveProfile={onSaveProfileAndNavigate}
                 onSave={onSaveProfileAndNavigate}
+                onOpenDatabaseModal={() => setIsDatabaseToolsModalOpen(true)}
               />
             )}
 
@@ -429,10 +470,16 @@ export default function App() {
         />
       )}
 
-      {isDatabaseModalOpen && (
-        <DatabaseStatusModal
-          isOpen={isDatabaseModalOpen}
-          onClose={() => setIsDatabaseModalOpen(false)}
+      {isDatabaseToolsModalOpen && (
+        <DatabaseToolsModal
+          isOpen={isDatabaseToolsModalOpen}
+          onClose={() => setIsDatabaseToolsModalOpen(false)}
+          uid={currentUser.id}
+          userProfile={userProfile}
+          workoutProgram={program}
+          workoutLogs={workoutLogs}
+          onRestoreData={handleRestoreDatabaseBackup}
+          onImportSampleLogs={handleImportSampleWorkoutLogs}
         />
       )}
     </div>

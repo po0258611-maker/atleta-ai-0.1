@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { FullBodyProgram, SetLog, WorkoutDay, WorkoutLog, Exercise } from '../types';
 import { calculateDoubleProgression } from '../engine/progressEngine';
 import { ExerciseDetailModal } from './ExerciseDetailModal';
+import { getExerciseImageUrl } from '../utils/exerciseImageHelper';
 import { Play, Check, Clock, RotateCcw, Save, TrendingUp, Award, Dumbbell, BookOpen, Info, X, Activity } from 'lucide-react';
 
 interface WorkoutLoggerViewProps {
@@ -179,37 +180,52 @@ export const WorkoutLoggerView: React.FC<WorkoutLoggerViewProps> = ({
               className="bg-slate-900 border border-slate-800 rounded-2xl p-5 shadow-xl space-y-4"
             >
               <div className="flex flex-col sm:flex-row sm:items-center justify-between border-b border-slate-800 pb-3 gap-2">
-                <div>
-                  <div className="flex items-center space-x-2 flex-wrap">
-                    <span className="h-6 w-6 rounded-md bg-cyan-600/20 text-cyan-400 text-xs font-bold flex items-center justify-center">
+                <div className="flex items-start space-x-3">
+                  <div
+                    onClick={() => setActiveGuideExercise(item.exercise)}
+                    className="w-12 h-12 rounded-xl bg-slate-950 border border-slate-800 hover:border-cyan-500/60 overflow-hidden shrink-0 relative cursor-pointer group/thumb transition-all shadow-sm flex items-center justify-center mt-0.5"
+                    title="Ver guia anatômico 3D"
+                  >
+                    <img
+                      src={getExerciseImageUrl(item.exercise)}
+                      alt={item.exercise.nome}
+                      className="w-full h-full object-cover group-hover/thumb:scale-110 transition-transform duration-300"
+                      referrerPolicy="no-referrer"
+                    />
+                    <div className="absolute top-0 left-0 bg-slate-950/85 px-1 rounded-br text-[9px] font-bold text-cyan-400">
                       #{itemIdx + 1}
-                    </span>
-                    <h3 className="font-bold text-lg text-white">{item.exercise.nome}</h3>
-                    
-                    {/* Info 'i' Button */}
-                    <button
-                      onClick={() => setOpenBiomechanicsId(openBiomechanicsId === item.id ? null : item.id)}
-                      className={`p-1.5 rounded-lg border text-xs transition-all flex items-center justify-center cursor-pointer ${
-                        openBiomechanicsId === item.id
-                          ? 'bg-cyan-500 text-slate-950 border-cyan-400 font-bold shadow-md shadow-cyan-500/20'
-                          : 'bg-slate-800 hover:bg-slate-700 text-cyan-400 border-slate-700 hover:border-cyan-500/50'
-                      }`}
-                      title="Clique para dicas rápidas de biomecânica"
-                    >
-                      <Info className="h-3.5 w-3.5" />
-                    </button>
-
-                    <button
-                      onClick={() => setActiveGuideExercise(item.exercise)}
-                      className="bg-slate-800 hover:bg-slate-700 text-cyan-300 font-semibold px-2.5 py-1 rounded-lg text-[11px] flex items-center space-x-1 border border-slate-700 transition-all cursor-pointer ml-1"
-                    >
-                      <BookOpen className="h-3 w-3" />
-                      <span>VER GUIA</span>
-                    </button>
+                    </div>
                   </div>
-                  <p className="text-xs text-slate-400 mt-0.5">
-                    Meta: {item.targetSets} séries × {item.targetReps} reps • RIR Meta: {item.targetRIR}
-                  </p>
+
+                  <div>
+                    <div className="flex items-center space-x-2 flex-wrap">
+                      <h3 className="font-bold text-lg text-white">{item.exercise.nome}</h3>
+                      
+                      {/* Info 'i' Button */}
+                      <button
+                        onClick={() => setOpenBiomechanicsId(openBiomechanicsId === item.id ? null : item.id)}
+                        className={`p-1.5 rounded-lg border text-xs transition-all flex items-center justify-center cursor-pointer ${
+                          openBiomechanicsId === item.id
+                            ? 'bg-cyan-500 text-slate-950 border-cyan-400 font-bold shadow-md shadow-cyan-500/20'
+                            : 'bg-slate-800 hover:bg-slate-700 text-cyan-400 border-slate-700 hover:border-cyan-500/50'
+                        }`}
+                        title="Clique para dicas rápidas de biomecânica"
+                      >
+                        <Info className="h-3.5 w-3.5" />
+                      </button>
+
+                      <button
+                        onClick={() => setActiveGuideExercise(item.exercise)}
+                        className="bg-slate-800 hover:bg-slate-700 text-cyan-300 font-semibold px-2.5 py-1 rounded-lg text-[11px] flex items-center space-x-1 border border-slate-700 transition-all cursor-pointer ml-1"
+                      >
+                        <BookOpen className="h-3 w-3" />
+                        <span>VER GUIA</span>
+                      </button>
+                    </div>
+                    <p className="text-xs text-slate-400 mt-0.5">
+                      Meta: {item.targetSets} séries × {item.targetReps} reps • RIR Meta: {item.targetRIR}
+                    </p>
+                  </div>
                 </div>
 
                 {/* Double Progression Recommendation Card */}

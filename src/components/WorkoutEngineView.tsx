@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { FullBodyProgram, WorkoutDay, UserProfile, MuscleGroup, Exercise } from '../types';
 import { fetchPrescriptionExplanation } from '../engine/aiCoachEngine';
 import { ExerciseDetailModal } from './ExerciseDetailModal';
+import { getExerciseImageUrl } from '../utils/exerciseImageHelper';
 import { Cpu, Sparkles, RefreshCw, Layers, ShieldCheck, ChevronRight, AlertCircle, Info, BookOpen, FileDown, X, HelpCircle, Activity, Cloud } from 'lucide-react';
 import { exportPlanToPDF } from '../services/pdfExporter';
 
@@ -189,8 +190,20 @@ export const WorkoutEngineView: React.FC<WorkoutEngineViewProps> = ({
                   <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
                     
                     <div className="flex items-start space-x-3">
-                      <div className="h-7 w-7 rounded-lg bg-cyan-600/20 border border-cyan-500/30 text-cyan-400 flex items-center justify-center font-bold text-xs shrink-0 mt-0.5">
-                        #{idx + 1}
+                      <div
+                        onClick={() => setActiveGuideExercise(item.exercise)}
+                        className="w-11 h-11 rounded-xl bg-slate-900 border border-slate-800 hover:border-cyan-500/60 overflow-hidden shrink-0 relative cursor-pointer group/thumb transition-all shadow-sm flex items-center justify-center mt-0.5"
+                        title="Ver guia anatômico 3D"
+                      >
+                        <img
+                          src={getExerciseImageUrl(item.exercise)}
+                          alt={item.exercise.nome}
+                          className="w-full h-full object-cover group-hover/thumb:scale-110 transition-transform duration-300"
+                          referrerPolicy="no-referrer"
+                        />
+                        <div className="absolute top-0 left-0 bg-slate-950/85 px-1 rounded-br text-[9px] font-bold text-cyan-400">
+                          #{idx + 1}
+                        </div>
                       </div>
 
                       <div>

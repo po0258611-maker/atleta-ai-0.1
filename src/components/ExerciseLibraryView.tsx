@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { Exercise } from '../types';
 import { EXERCISE_DATABASE } from '../engine/exerciseData';
 import { ExerciseDetailModal } from './ExerciseDetailModal';
+import { getExerciseImageUrl } from '../utils/exerciseImageHelper';
 import {
   Search,
   BookOpen,
@@ -246,22 +247,18 @@ export const ExerciseLibraryView: React.FC<ExerciseLibraryViewProps> = ({
               >
                 {/* Visual Header / Thumbnail */}
                 <div className="bg-slate-950 h-44 relative overflow-hidden flex items-center justify-center border-b border-slate-800">
-                  {ex.imagemAnatomica3D || ex.imagem ? (
-                    <img
-                      src={ex.imagemAnatomica3D || ex.imagem}
-                      alt={ex.nome}
-                      className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500"
-                      referrerPolicy="no-referrer"
-                      onError={(e) => {
-                        (e.target as HTMLElement).style.display = 'none';
-                      }}
-                    />
-                  ) : (
-                    <div className="flex flex-col items-center justify-center space-y-2 text-slate-500">
-                      <Dumbbell className="h-10 w-10 text-cyan-400/40" />
-                      <span className="text-[10px] uppercase font-bold tracking-wider text-slate-400">Modelo 3D</span>
-                    </div>
-                  )}
+                  <img
+                    src={getExerciseImageUrl(ex)}
+                    alt={ex.nome}
+                    className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500"
+                    referrerPolicy="no-referrer"
+                    onError={(e) => {
+                      const target = e.target as HTMLImageElement;
+                      if (!target.src.includes('athletic_squat')) {
+                        target.src = '/images/athletic_squat_3d_1786105958653.jpg';
+                      }
+                    }}
+                  />
 
                   {/* Overlay Badges */}
                   <div className="absolute top-3 left-3 flex items-center space-x-1.5 flex-wrap gap-y-1">

@@ -11,8 +11,12 @@ import {
   Menu, 
   X, 
   CreditCard, 
-  Activity
+  Activity,
+  MoreHorizontal,
+  Flame,
+  Award
 } from 'lucide-react';
+import { useScreenOrientation } from '../hooks/useScreenOrientation';
 
 export type TabType = 
   | 'overview'
@@ -23,7 +27,8 @@ export type TabType =
   | 'assessment'
   | 'subscription'
   | 'fatigue'
-  | 'progress';
+  | 'progress'
+  | 'achievements';
 
 interface SidebarNavProps {
   activeTab: TabType;
@@ -45,6 +50,7 @@ export const SidebarNav: React.FC<SidebarNavProps> = ({
   setIsMobileOpen,
 }) => {
   const [internalIsCollapsed, setInternalIsCollapsed] = useState(false);
+  const orientation = useScreenOrientation();
   
   const isCollapsed = externalIsCollapsed !== undefined ? externalIsCollapsed : internalIsCollapsed;
   const toggleCollapse = () => {
@@ -249,8 +255,12 @@ export const SidebarNav: React.FC<SidebarNavProps> = ({
         </div>
       )}
 
-      {/* Fixed Mobile Bottom Navigation Bar (App-like touch navigation for smartphones) */}
-      <div className="fixed bottom-0 left-0 right-0 bg-[#0f0f12]/95 backdrop-blur-md border-t border-zinc-800/90 py-2 px-3 z-40 lg:hidden flex items-center justify-around shadow-2xl">
+      {/* Fixed Mobile Bottom Navigation Bar (App-like touch navigation for smartphones with rotation support) */}
+      <div 
+        className={`fixed bottom-0 left-0 right-0 bg-[#0f0f12]/95 backdrop-blur-md border-t border-zinc-800/90 z-40 lg:hidden flex items-center justify-around shadow-2xl safe-bottom transition-all duration-200 ${
+          orientation.isShortViewport ? 'py-1 px-2' : 'py-1.5 px-2'
+        }`}
+      >
         {[
           { id: 'overview' as TabType, label: 'Início', icon: Bookmark },
           { id: 'workout_engine' as TabType, label: 'Treino', icon: Dumbbell },
@@ -265,17 +275,29 @@ export const SidebarNav: React.FC<SidebarNavProps> = ({
             <button
               key={nav.id}
               onClick={() => handleSelectTab(nav.id)}
-              className={`flex flex-col items-center justify-center space-y-1 px-3 py-1 rounded-xl transition-all min-w-[56px] ${
+              className={`flex ${orientation.isShortViewport ? 'flex-row space-x-1.5 px-2 py-1' : 'flex-col space-y-0.5 px-2 py-1'} items-center justify-center rounded-xl transition-all min-w-[50px] min-h-[42px] cursor-pointer active:scale-95 ${
                 isActive ? 'text-rose-400 font-bold' : 'text-zinc-400 hover:text-zinc-200'
               }`}
             >
-              <div className={`p-1 rounded-xl ${isActive ? 'bg-rose-500/20 border border-rose-500/30' : ''}`}>
-                <Icon className="h-5 w-5" />
+              <div className={`p-1 rounded-xl transition-colors ${isActive ? 'bg-rose-500/20 border border-rose-500/30' : ''}`}>
+                <Icon className={orientation.isShortViewport ? 'h-4 w-4' : 'h-4.5 w-4.5'} />
               </div>
-              <span className="text-[10px] tracking-tight">{nav.label}</span>
+              <span className="text-[10px] tracking-tight whitespace-nowrap">{nav.label}</span>
             </button>
           );
         })}
+
+        {/* More/Menu shortcut */}
+        <button
+          onClick={() => setIsMobileOpen && setIsMobileOpen(true)}
+          className={`flex ${orientation.isShortViewport ? 'flex-row space-x-1.5 px-2 py-1' : 'flex-col space-y-0.5 px-2 py-1'} items-center justify-center rounded-xl text-zinc-400 hover:text-zinc-200 transition-all min-w-[50px] min-h-[42px] cursor-pointer active:scale-95`}
+          title="Mais opções e perfil"
+        >
+          <div className="p-1 rounded-xl hover:bg-zinc-800">
+            <MoreHorizontal className={orientation.isShortViewport ? 'h-4 w-4' : 'h-4.5 w-4.5'} />
+          </div>
+          <span className="text-[10px] tracking-tight">Mais</span>
+        </button>
       </div>
     </>
   );

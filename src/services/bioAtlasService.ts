@@ -1,6 +1,7 @@
 import { BioAtlasExercise, BioAtlasFilterOptions } from './bioAtlasTypes';
 import { EXERCISE_DATABASE } from '../engine/exerciseData';
 import { Exercise, GymEnvironment, MuscleGroup } from '../types';
+import { getExerciseImageUrl } from '../utils/exerciseImageHelper';
 
 /**
  * Transforms legacy Exercise schema into structured BioAtlasExercise format
@@ -57,8 +58,8 @@ export function transformToBioAtlas(ex: Exercise): BioAtlasExercise {
       youtubeVideoId: ex.youtubeVideoId,
       videoUrlMp4: ex.videoUrlMp4,
       videoLegendaPT: ex.videoLegendaPT,
-      imageUrl: ex.imagem,
-      imageAnatomical3D: ex.imagemAnatomica3D,
+      imageUrl: getExerciseImageUrl(ex),
+      imageAnatomical3D: getExerciseImageUrl(ex),
     },
 
     isFavorite: ex.isFavorite,

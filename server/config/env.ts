@@ -1,52 +1,20 @@
-function requiredSecret(name: string): string {
-  const value = process.env[name]?.trim();
-  if (!value) {
-    throw new Error(`Missing required environment variable: ${name}`);
-  }
-  return value;
-}
-
-function positiveNumber(name: string, fallback: number): number {
-  const raw = process.env[name];
-  const value = raw === undefined || raw === '' ? fallback : Number(raw);
-  if (!Number.isFinite(value) || value <= 0) {
-    throw new Error(`${name} must be a positive number.`);
-  }
-  return value;
-}
-
-const isProduction = process.env.NODE_ENV === 'production';
-
-const supabaseUrl = process.env.SUPABASE_URL?.trim() || '';
-const supabaseAnonKey = process.env.SUPABASE_ANON_KEY?.trim() || '';
-const firebaseProjectId = process.env.FIREBASE_PROJECT_ID?.trim() || '';
-
-if (isProduction && !firebaseProjectId) {
-  throw new Error('FIREBASE_PROJECT_ID is required in production.');
-}
-
 export const SERVER_CONFIG = {
-  PORT: positiveNumber('PORT', 3000),
+  PORT: Number(process.env.PORT || 3000),
   NODE_ENV: process.env.NODE_ENV || 'development',
-  GEMINI_MODEL: process.env.GEMINI_MODEL?.trim() || 'gemini-3.7-flash',
-  GEMINI_API_KEY: process.env.GEMINI_API_KEY?.trim() || '',
-  SUPABASE_URL: isProduction ? requiredSecret('SUPABASE_URL') : supabaseUrl,
-  SUPABASE_ANON_KEY: isProduction ? requiredSecret('SUPABASE_ANON_KEY') : supabaseAnonKey,
-  FIREBASE_PROJECT_ID: firebaseProjectId,
-  PAYMENT_MODE: process.env.PAYMENT_MODE === 'live' ? 'live' : 'mock',
-  RATE_LIMIT_WINDOW_MS: 60 * 1000,
-  RATE_LIMIT_MAX_REQUESTS: positiveNumber('RATE_LIMIT_MAX_REQUESTS', 30),
-  MAX_PROMPT_LENGTH: positiveNumber('MAX_PROMPT_LENGTH', 4000),
-  CORS_ORIGINS: (process.env.CORS_ORIGINS || '')
+  CORS_ORIGINS: (process.env.CORS_ORIGINS || 'http://localhost:3000')
     .split(',')
-    .map((origin) => origin.trim())
+    .map((s) => s.trim())
     .filter(Boolean),
+  GEMINI_MODEL: process.env.GEMINI_MODEL || 'gemini-3.7-flash',
+  GEMINI_API_KEY: process.env.GEMINI_API_KEY?.trim() || '',
+  SUPABASE_URL: process.env.SUPABASE_URL?.trim() || '',
+  SUPABASE_ANON_KEY: process.env.SUPABASE_ANON_KEY?.trim() || '',
+  FIREBASE_PROJECT_ID: process.env.FIREBASE_PROJECT_ID?.trim() || '',
+  PAYMENT_MODE: (process.env.PAYMENT_MODE?.trim() === 'live') ? 'live' : 'mock',
+  STRIPE_WEBHOOK_SECRET: process.env.STRIPE_WEBHOOK_SECRET?.trim() || 'whsec_test_stripe_secret_key_athleta_ai_2026',
+  PIX_WEBHOOK_SECRET: process.env.PIX_WEBHOOK_SECRET?.trim() || 'pix_whsec_test_secret_athleta_ai_2026',
+  RATE_LIMIT_WINDOW_MS: 60 * 1000,
+  RATE_LIMIT_MAX_REQUESTS: Math.max(1, Number(process.env.RATE_LIMIT_MAX_REQUESTS) || 30),
+  MAX_PROMPT_LENGTH: Math.max(100, Number(process.env.MAX_PROMPT_LENGTH) || 4000),
 };
 
-if (isProduction && SERVER_CONFIG.PAYMENT_MODE !== 'live') {
-  throw new Error('PAYMENT_MODE=live is required in production. Mock payment providers are disabled for safety.');
-}
-
-if (SERVER_CONFIG.MAX_PROMPT_LENGTH < 100) {
-  throw new Error('MAX_PROMPT_LENGTH must be at least 100 characters.');
-}

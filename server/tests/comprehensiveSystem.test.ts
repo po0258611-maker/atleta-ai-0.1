@@ -26,7 +26,11 @@ import { subscriptionRepository } from '../repositories/subscriptionRepository';
 import { subscriptionServerRepository } from '../repositories/subscriptionServerRepository';
 import { entitlementService } from '../services/entitlementService';
 import { PaymentWebhookService } from '../services/paymentWebhookService';
+import { WebhookSignatureVerifier } from '../services/payments/webhookSignatureVerifier';
+import { setFirestoreAdapter, MemoryFirestoreAdapter } from '../repositories/firestoreAdapter';
 import { UserProfile, Exercise, SetLog } from '../../src/types';
+
+setFirestoreAdapter(new MemoryFirestoreAdapter());
 
 async function runComprehensiveAutomatedTests() {
   console.log('===================================================================');
@@ -282,8 +286,9 @@ async function runComprehensiveAutomatedTests() {
       });
 
       const { plan, status } = await entitlementService.resolveUserPlan(freeUser.id);
-      assertTest(status === 'active', 'Subscription: Status da assinatura ativado com sucesso');
-      assertTest(plan.slug === 'PREMIUM', 'Subscription: Plano resolvido como PREMIUM no servidor');
+      assertTest(status === 'ACTIVE', 'Subscription: Status da assinatura ativado com sucesso');
+      assertTest(plan.slug === 'PRO', 'Subscription: Plano resolvido como PRO no servidor');
+
 
       const accessAdvanced = await entitlementService.evaluateAccess(freeUser.id, 'ADVANCED_PERIODIZATION');
       assertTest(accessAdvanced.granted === true, 'Subscription: Usuário PRO tem acesso concedido à periodização avançada ilimitada');
@@ -318,11 +323,22 @@ async function runComprehensiveAutomatedTests() {
         },
       };
 
-      const handled = await webhookService.handleWebhook(payload);
+      const rawPayload = JSON.stringify(payload);
+      const signature = WebhookSignatureVerifier.generateStripeSignature(rawPayload);
+
+      const handled = await webhookService.handleWebhook({
+        payload,
+        rawPayload,
+        signatureHeader: signature,
+      });
       assertTest(handled.processed === true, 'Payments: Webhook de pagamento confirmado processado com sucesso');
 
       // Idempotency check: sending exact same eventId should not duplicate
-      const duplicateHandled = await webhookService.handleWebhook(payload);
+      const duplicateHandled = await webhookService.handleWebhook({
+        payload,
+        rawPayload,
+        signatureHeader: signature,
+      });
       assertTest(duplicateHandled.reason === 'ALREADY_PROCESSED', 'Payments: Idempotência ativa rejeitou duplicata');
     }
   }
@@ -343,7 +359,14 @@ async function runComprehensiveAutomatedTests() {
         },
       };
 
-      const handled = await webhookService.handleWebhook(payload);
+      const rawPayload = JSON.stringify(payload);
+      const signature = WebhookSignatureVerifier.generateStripeSignature(rawPayload);
+
+      const handled = await webhookService.handleWebhook({
+        payload,
+        rawPayload,
+        signatureHeader: signature,
+      });
       assertTest(handled.processed === true, 'Payments: Webhook de falha de pagamento tratado sem crash');
     }
   }

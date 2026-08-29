@@ -2,10 +2,19 @@ import type { Request, Response } from 'express';
 import { paymentManagerService } from '../services/payments/paymentManagerService';
 import { paymentWebhookService } from '../services/paymentWebhookService';
 import { subscriptionServerRepository } from '../repositories/subscriptionServerRepository';
+import { entitlementService } from '../services/entitlementService';
 import { logger } from '../middlewares/logger';
 import { getPaidPlan, PaidPlanSlug } from '../config/plans';
+import { PaymentMethodType } from '../services/payments/paymentProvider.interface';
 
-const ALLOWED_PAYMENT_METHODS = new Set(['pix', 'pix_direct', 'stripe', 'credit_card']);
+const ALLOWED_PAYMENT_METHODS: Record<string, PaymentMethodType> = {
+  pix: 'pix',
+  pix_direct: 'pix',
+  stripe: 'credit_card',
+  credit_card: 'credit_card',
+  google_play: 'google_play',
+  boleto: 'boleto',
+};
 
 export async function handleCreatePaymentIntent(req: Request, res: Response) {
   const uid = req.athlete?.uid;
@@ -14,16 +23,16 @@ export async function handleCreatePaymentIntent(req: Request, res: Response) {
     return res.status(401).json({ error: { code: 'UNAUTHORIZED', message: 'Autenticação com e-mail verificado necessária.' } });
   }
 
-  const { paymentMethod, planSlug, idempotencyKey } = req.body ?? {};
+  const { paymentMethod: rawPaymentMethod, planSlug, idempotencyKey } = req.body ?? {};
   const plan = getPaidPlan(planSlug);
 
   if (!plan) {
     return res.status(400).json({ error: { code: 'INVALID_PLAN', message: 'Plano de pagamento inválido.' } });
   }
 
-  if (typeof paymentMethod !== 'string' || !ALLOWED_PAYMENT_METHODS.has(paymentMethod)) {
-    return res.status(400).json({ error: { code: 'INVALID_PAYMENT_METHOD', message: 'Método de pagamento inválido.' } });
-  }
+  const normalizedMethod: PaymentMethodType = typeof rawPaymentMethod === 'string' && ALLOWED_PAYMENT_METHODS[rawPaymentMethod]
+    ? ALLOWED_PAYMENT_METHODS[rawPaymentMethod]
+    : 'pix';
 
   if (typeof idempotencyKey !== 'string' || idempotencyKey.length < 16 || idempotencyKey.length > 128) {
     return res.status(400).json({ error: { code: 'INVALID_IDEMPOTENCY_KEY', message: 'Chave de idempotência inválida.' } });
@@ -36,7 +45,7 @@ export async function handleCreatePaymentIntent(req: Request, res: Response) {
       userName: req.athlete?.name || 'Atleta',
       planSlug: plan.slug as PaidPlanSlug,
       amountCents: plan.amountCents,
-      paymentMethod,
+      paymentMethod: normalizedMethod,
       idempotencyKey,
     });
 
@@ -73,7 +82,13 @@ export async function handlePaymentWebhook(req: Request, res: Response) {
   const provider = req.params.provider;
   const eventId = (req.headers['x-webhook-id'] as string | undefined) || req.body?.id;
   const eventType = req.body?.type || req.body?.event;
-  const signature = (req.headers['x-signature'] as string | undefined) || (req.headers['stripe-signature'] as string | undefined);
+  const signature =
+    (req.headers['stripe-signature'] as string | undefined) ||
+    (req.headers['x-signature'] as string | undefined) ||
+    (req.headers['x-hub-signature-256'] as string | undefined);
+  const timestampHeader =
+    (req.headers['x-signature-timestamp'] as string | undefined) ||
+    (req.headers['x-webhook-timestamp'] as string | undefined);
 
   if (!['stripe', 'pix_direct', 'pix'].includes(provider)) {
     return res.status(400).json({ error: { code: 'INVALID_PROVIDER', message: 'Provedor de pagamento inválido.' } });
@@ -89,8 +104,10 @@ export async function handlePaymentWebhook(req: Request, res: Response) {
 
   if (!signature) {
     logger.warn('Webhook rejeitado: assinatura ausente', { provider, eventId });
-    return res.status(401).json({ error: { code: 'INVALID_SIGNATURE', message: 'Assinatura inválida.' } });
+    return res.status(401).json({ error: { code: 'MISSING_SIGNATURE', message: 'Assinatura criptográfica obrigatória ausente.' } });
   }
+
+  const rawPayload = (req as any).rawBody || (typeof req.body === 'string' ? req.body : JSON.stringify(req.body));
 
   const data = req.body?.data ?? {};
   if (typeof data.subscription_id !== 'string' || !data.subscription_id || typeof data.customer_id !== 'string' || !data.customer_id) {
@@ -102,11 +119,12 @@ export async function handlePaymentWebhook(req: Request, res: Response) {
   }
 
   try {
-    const result = await paymentWebhookService.handleWebhook(
-      {
+    const result = await paymentWebhookService.handleWebhook({
+      payload: {
         provider: provider as any,
         eventId,
         eventType,
+        eventTimestamp: req.body?.created ? req.body.created * 1000 : req.body?.timestamp,
         data: {
           customerId: data.customer_id,
           subscriptionId: data.subscription_id,
@@ -118,11 +136,29 @@ export async function handlePaymentWebhook(req: Request, res: Response) {
           amountCents: typeof data.amount_cents === 'number' ? data.amount_cents : undefined,
         },
       },
-      signature
-    );
+      rawPayload,
+      signatureHeader: signature,
+      timestampHeader,
+    });
 
-    if (!result.processed && result.reason === 'USER_NOT_FOUND') {
-      return res.status(404).json({ error: { code: 'USER_NOT_FOUND', message: 'Usuário não encontrado.' } });
+    if (!result.processed) {
+      if (
+        result.reason === 'MISSING_SIGNATURE' ||
+        result.reason.includes('SIGNATURE') ||
+        result.reason.includes('REPLAY') ||
+        result.reason.includes('TIMESTAMP') ||
+        result.reason.includes('FORMAT')
+      ) {
+        return res.status(401).json({
+          error: {
+            code: result.reason,
+            message: 'Falha na autenticação criptográfica do webhook.',
+          },
+        });
+      }
+      if (result.reason === 'USER_NOT_FOUND') {
+        return res.status(404).json({ error: { code: 'USER_NOT_FOUND', message: 'Usuário não encontrado.' } });
+      }
     }
 
     return res.json({ status: 'ok', result });
@@ -138,6 +174,74 @@ export async function handleGetSubscriptionHistory(req: Request, res: Response) 
     return res.status(401).json({ error: { code: 'UNAUTHORIZED', message: 'Usuário não autenticado.' } });
   }
 
-  const history = await subscriptionServerRepository.getHistoryByUserId(uid);
-  return res.json({ history });
+  try {
+    const history = await subscriptionServerRepository.getHistoryByUserId(uid);
+    return res.json({ history });
+  } catch (err: any) {
+    logger.warn('Aviso ao buscar histórico de assinatura', { userId: uid, error: err?.message });
+    return res.json({ history: [] });
+  }
 }
+
+export async function handleCancelSubscription(req: Request, res: Response) {
+  const uid = req.athlete?.uid;
+  if (!uid) {
+    return res.status(401).json({ error: { code: 'UNAUTHORIZED', message: 'Usuário não autenticado.' } });
+  }
+
+  try {
+    const immediate = req.body?.immediate === true;
+    const result = await entitlementService.cancelSubscription(uid, immediate);
+    if (!result) {
+      return res.status(404).json({ error: { code: 'SUBSCRIPTION_NOT_FOUND', message: 'Nenhuma assinatura encontrada para este usuário.' } });
+    }
+
+    const summary = await entitlementService.getEntitlementsSummary(uid);
+    return res.json({ success: true, subscription: result, summary });
+  } catch (err: any) {
+    logger.error('Erro ao cancelar assinatura', { userId: uid, error: err?.message });
+    return res.status(500).json({ error: { code: 'CANCEL_ERROR', message: 'Não foi possível cancelar a assinatura no momento.' } });
+  }
+}
+
+export async function handleReactivateSubscription(req: Request, res: Response) {
+  const uid = req.athlete?.uid;
+  if (!uid) {
+    return res.status(401).json({ error: { code: 'UNAUTHORIZED', message: 'Usuário não autenticado.' } });
+  }
+
+  try {
+    const result = await entitlementService.reactivateSubscription(uid);
+    if (!result) {
+      return res.status(404).json({ error: { code: 'SUBSCRIPTION_NOT_FOUND', message: 'Nenhuma assinatura encontrada para este usuário.' } });
+    }
+
+    const summary = await entitlementService.getEntitlementsSummary(uid);
+    return res.json({ success: true, subscription: result, summary });
+  } catch (err: any) {
+    logger.error('Erro ao reativar assinatura', { userId: uid, error: err?.message });
+    return res.status(500).json({ error: { code: 'REACTIVATE_ERROR', message: 'Não foi possível reativar a assinatura no momento.' } });
+  }
+}
+
+export async function handleChangePlan(req: Request, res: Response) {
+  const uid = req.athlete?.uid;
+  if (!uid) {
+    return res.status(401).json({ error: { code: 'UNAUTHORIZED', message: 'Usuário não autenticado.' } });
+  }
+
+  const { planSlug } = req.body ?? {};
+  if (!['FREE', 'PRO', 'APEX_ELITE'].includes(planSlug)) {
+    return res.status(400).json({ error: { code: 'INVALID_PLAN', message: 'Plano inválido especificado.' } });
+  }
+
+  try {
+    const result = await entitlementService.changePlan(uid, planSlug);
+    const summary = await entitlementService.getEntitlementsSummary(uid);
+    return res.json({ success: true, subscription: result, summary });
+  } catch (err: any) {
+    logger.error('Erro ao alterar plano', { userId: uid, error: err?.message });
+    return res.status(500).json({ error: { code: 'CHANGE_PLAN_ERROR', message: 'Não foi possível alterar o plano no momento.' } });
+  }
+}
+

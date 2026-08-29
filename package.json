@@ -10,7 +10,7 @@
     "preview": "vite preview",
     "clean": "rm -rf dist server.cjs",
     "lint": "tsc --noEmit",
-    "test": "tsx src/engine/tests/workoutEngine.test.ts && tsx src/engine/tests/progressionEngine.test.ts && tsx src/engine/tests/oneRepMax.test.ts && tsx src/engine/tests/bodyComposition.test.ts && tsx src/engine/tests/fatigueEngine.test.ts && tsx src/engine/tests/bioAtlas.test.ts && tsx src/engine/tests/aiArchitecture.test.ts && tsx server/tests/rbac.test.ts && tsx server/tests/subscription.test.ts && tsx server/tests/entitlementEngine.test.ts && tsx server/tests/paymentProvider.test.ts && tsx server/tests/supabaseDatabase.test.ts && tsx server/tests/comprehensiveSystem.test.ts"
+    "test": "tsx src/engine/tests/workoutEngine.test.ts && tsx src/engine/tests/progressionEngine.test.ts && tsx src/engine/tests/oneRepMax.test.ts && tsx src/engine/tests/bodyComposition.test.ts && tsx src/engine/tests/fatigueEngine.test.ts && tsx src/engine/tests/bioAtlas.test.ts && tsx src/engine/tests/aiArchitecture.test.ts && tsx server/tests/firestorePersistence.test.ts && tsx server/tests/atomicQuotaConcurrency.test.ts && tsx server/tests/webhookSecurity.test.ts && tsx server/tests/rbac.test.ts && tsx server/tests/subscription.test.ts && tsx server/tests/entitlementEngine.test.ts && tsx server/tests/paymentProvider.test.ts && tsx server/tests/supabaseDatabase.test.ts && tsx server/tests/comprehensiveSystem.test.ts"
   },
   "dependencies": {
     "@google/genai": "^2.4.0",

@@ -13,6 +13,9 @@ import { PixPaymentProvider } from '../services/payments/pixPaymentProvider';
 import { StripeGatewayProvider } from '../services/payments/stripePaymentProvider';
 import { paymentManagerService } from '../services/payments/paymentManagerService';
 import { subscriptionServerRepository } from '../repositories/subscriptionServerRepository';
+import { setFirestoreAdapter, MemoryFirestoreAdapter } from '../repositories/firestoreAdapter';
+
+setFirestoreAdapter(new MemoryFirestoreAdapter());
 
 async function runPaymentProviderTests() {
   console.log('--- INICIANDO TESTES DA ARQUITETURA DE GATEWAY DE PAGAMENTOS ---');

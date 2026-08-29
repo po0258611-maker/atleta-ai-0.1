@@ -14,6 +14,9 @@ import { authService } from '../services/authService';
 import { entitlementService } from '../services/entitlementService';
 import { subscriptionServerRepository } from '../repositories/subscriptionServerRepository';
 import { usageRepository } from '../repositories/usageRepository';
+import { setFirestoreAdapter, MemoryFirestoreAdapter } from '../repositories/firestoreAdapter';
+
+setFirestoreAdapter(new MemoryFirestoreAdapter());
 
 async function runTests() {
   console.log('--- INICIANDO TESTES DO MOTOR DE IDENTIDADE E ENTITLEMENTS ---');

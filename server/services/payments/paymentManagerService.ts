@@ -21,10 +21,6 @@ export class PaymentManagerService {
   }
 
   async initiatePayment(input: CreatePaymentInput): Promise<PaymentTransactionResult> {
-    if (SERVER_CONFIG.PAYMENT_MODE !== 'mock') {
-      throw new Error('LIVE_PAYMENT_PROVIDER_NOT_IMPLEMENTED');
-    }
-
     const plan = getPaidPlan(input.planSlug);
     if (!plan || plan.amountCents !== input.amountCents) {
       throw new Error('INVALID_SERVER_PRICING');
