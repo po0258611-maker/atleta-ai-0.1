@@ -1,6 +1,7 @@
 import { UserProfile, FullBodyProgram, WorkoutLog } from '../types';
 import { BodyMeasurementRecord } from './bodyMeasurementsService';
 import { apiRequest } from '../api/apiClient';
+import { FirestoreDataService } from './firestoreDataService';
 
 export interface DatabaseBackupPayload {
   version: string;
@@ -95,10 +96,9 @@ export class DatabaseToolsService {
     let measurements: BodyMeasurementRecord[] = [];
 
     try {
-      const raw = localStorage.getItem(`athleta_ai_body_measurements_${uid}`) || localStorage.getItem('athleta_ai_body_measurements');
-      if (raw) measurements = JSON.parse(raw);
-    } catch {
-      measurements = [];
+      measurements = await FirestoreDataService.getMeasurements(uid);
+    } catch (error) {
+      console.warn('[DatabaseTools] Não foi possível carregar medições do Firestore:', error);
     }
 
     const simpleChecksum = btoa(encodeURIComponent(`${uid}_${workoutLogs.length}_${measurements.length}_${Date.now()}`)).slice(0, 16);
@@ -136,17 +136,18 @@ export class DatabaseToolsService {
     if (!logs || logs.length === 0) return;
     const headers = ['Data', 'Treino', 'Duração (min)', 'Exercício', 'Séries', 'Reps Realizadas', 'Cargas (kg)', 'RIR', 'RPE Sessão', 'Observações'];
     const rows: string[] = [];
+    const csvEscape = (value: unknown) => `"${String(value ?? '').replace(/"/g, '""')}"`;
 
     logs.forEach((log) => {
       if (!log.exerciseLogs || log.exerciseLogs.length === 0) {
-        rows.push([`"${log.date}"`, `"Treino ${log.dayId || '-'}"`, log.durationMin || 0, '"Sem exercícios"', 0, '"-"', '"-"', '"-"', log.sessionRPE || 0, `"${log.notes || ''}"`].join(','));
+        rows.push([csvEscape(log.date), csvEscape(`Treino ${log.dayId || '-'}`), log.durationMin || 0, csvEscape('Sem exercícios'), 0, csvEscape('-'), csvEscape('-'), csvEscape('-'), log.sessionRPE || 0, csvEscape(log.notes || '')].join(','));
         return;
       }
       log.exerciseLogs.forEach((ex) => {
         const repsStr = ex.sets.map((s) => s.repsDone).join(';');
         const weightsStr = ex.sets.map((s) => s.weightKg).join(';');
         const rirStr = ex.sets.map((s) => s.actualRIR ?? '-').join(';');
-        rows.push([`"${log.date}"`, `"Treino ${log.dayId || '-'}"`, log.durationMin || 0, `"${ex.exerciseName}"`, ex.sets.length, `"${repsStr}"`, `"${weightsStr}"`, `"${rirStr}"`, log.sessionRPE || 0, `"${log.notes || ''}"`].join(','));
+        rows.push([csvEscape(log.date), csvEscape(`Treino ${log.dayId || '-'}`), log.durationMin || 0, csvEscape(ex.exerciseName), ex.sets.length, csvEscape(repsStr), csvEscape(weightsStr), csvEscape(rirStr), log.sessionRPE || 0, csvEscape(log.notes || '')].join(','));
       });
     });
 
@@ -167,6 +168,7 @@ export class DatabaseToolsService {
       const parsed = JSON.parse(jsonText);
       if (!parsed || !parsed.data) return { valid: false, error: 'Arquivo inválido: estrutura de dados ausente.' };
       if (!parsed.data.profile && !Array.isArray(parsed.data.workoutLogs)) return { valid: false, error: 'Arquivo inválido: nenhum perfil ou registro de treino encontrado.' };
+      if (typeof parsed.uid !== 'string' || parsed.uid.length === 0) return { valid: false, error: 'Arquivo inválido: UID ausente.' };
       return { valid: true, payload: parsed as DatabaseBackupPayload };
     } catch (err: any) {
       return { valid: false, error: `Falha ao interpretar JSON: ${err.message}` };
@@ -197,39 +199,19 @@ export class DatabaseToolsService {
     const today = new Date();
     const sampleLogs: WorkoutLog[] = [
       {
-        id: `sample_log_1_${Date.now()}`,
-        dayId: 'A',
-        durationMin: 55,
-        sessionRPE: 8,
-        notes: 'Treino A - Carga base estabelecida com sobrecarga segura.',
-        date: new Date(today.getTime() - 7 * 86400000).toISOString().slice(0, 10),
+        id: `sample_log_1_${Date.now()}`, dayId: 'A', durationMin: 55, sessionRPE: 8, notes: 'Treino A - Carga base estabelecida com sobrecarga segura.', date: new Date(today.getTime() - 7 * 86400000).toISOString().slice(0, 10),
         exerciseLogs: [{ exerciseId: 'supino_reto_barra', exerciseName: 'Supino Reto com Barra', sets: [{ setNumber: 1, repsDone: 8, weightKg: 70, actualRIR: 2, completed: true }, { setNumber: 2, repsDone: 8, weightKg: 70, actualRIR: 2, completed: true }, { setNumber: 3, repsDone: 7, weightKg: 70, actualRIR: 1, completed: true }] }],
       },
       {
-        id: `sample_log_2_${Date.now()}`,
-        dayId: 'B',
-        durationMin: 60,
-        sessionRPE: 8.5,
-        notes: 'Treino B - Foco em extensão e estabilização de core.',
-        date: new Date(today.getTime() - 5 * 86400000).toISOString().slice(0, 10),
+        id: `sample_log_2_${Date.now()}`, dayId: 'B', durationMin: 60, sessionRPE: 8.5, notes: 'Treino B - Foco em extensão e estabilização de core.', date: new Date(today.getTime() - 5 * 86400000).toISOString().slice(0, 10),
         exerciseLogs: [{ exerciseId: 'agachamento_livre_barra', exerciseName: 'Agachamento Livre com Barra', sets: [{ setNumber: 1, repsDone: 6, weightKg: 90, actualRIR: 3, completed: true }, { setNumber: 2, repsDone: 6, weightKg: 90, actualRIR: 2, completed: true }, { setNumber: 3, repsDone: 6, weightKg: 90, actualRIR: 2, completed: true }] }],
       },
       {
-        id: `sample_log_3_${Date.now()}`,
-        dayId: 'C',
-        durationMin: 50,
-        sessionRPE: 8,
-        notes: 'Treino C - Sobrecarga progressiva aplicada (+2.5kg no Supino).',
-        date: new Date(today.getTime() - 2 * 86400000).toISOString().slice(0, 10),
+        id: `sample_log_3_${Date.now()}`, dayId: 'C', durationMin: 50, sessionRPE: 8, notes: 'Treino C - Sobrecarga progressiva aplicada (+2.5kg no Supino).', date: new Date(today.getTime() - 2 * 86400000).toISOString().slice(0, 10),
         exerciseLogs: [{ exerciseId: 'supino_reto_barra', exerciseName: 'Supino Reto com Barra', sets: [{ setNumber: 1, repsDone: 8, weightKg: 72.5, actualRIR: 2, completed: true }, { setNumber: 2, repsDone: 8, weightKg: 72.5, actualRIR: 2, completed: true }, { setNumber: 3, repsDone: 8, weightKg: 72.5, actualRIR: 1, completed: true }] }],
       },
       {
-        id: `sample_log_4_${Date.now()}`,
-        dayId: 'D',
-        durationMin: 55,
-        sessionRPE: 7.5,
-        notes: 'Treino D - Final de microciclo de choque com excelência.',
-        date: new Date(today.getTime() - 1 * 86400000).toISOString().slice(0, 10),
+        id: `sample_log_4_${Date.now()}`, dayId: 'D', durationMin: 55, sessionRPE: 7.5, notes: 'Treino D - Final de microciclo de choque com excelência.', date: new Date(today.getTime() - 1 * 86400000).toISOString().slice(0, 10),
         exerciseLogs: [{ exerciseId: 'elevacao_lateral_halteres', exerciseName: 'Elevação Lateral com Halteres', sets: [{ setNumber: 1, repsDone: 12, weightKg: 12, actualRIR: 2, completed: true }, { setNumber: 2, repsDone: 12, weightKg: 12, actualRIR: 2, completed: true }] }],
       },
     ];
@@ -238,7 +220,6 @@ export class DatabaseToolsService {
       { id: `meas_1_${Date.now()}`, userId: 'sample_user', date: new Date(today.getTime() - 14 * 86400000).toISOString().slice(0, 10), weightKg: 76.5, heightCm: 176, bodyFatPercentage: 15.2, chestCm: 101, waistCm: 82, armCm: 37, thighCm: 57 },
       { id: `meas_2_${Date.now()}`, userId: 'sample_user', date: new Date(today.getTime() - 1 * 86400000).toISOString().slice(0, 10), weightKg: 77.2, heightCm: 176, bodyFatPercentage: 14.8, chestCm: 102.5, waistCm: 81.5, armCm: 37.6, thighCm: 57.8 },
     ];
-
     return { logs: sampleLogs, measurements: sampleMeasurements };
   }
 }
