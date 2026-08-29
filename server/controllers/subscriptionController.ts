@@ -30,11 +30,13 @@ export async function handleCreatePaymentIntent(req: Request, res: Response) {
     return res.status(400).json({ error: { code: 'INVALID_PLAN', message: 'Plano de pagamento inválido.' } });
   }
 
-  const normalizedMethod: PaymentMethodType = typeof rawPaymentMethod === 'string' && ALLOWED_PAYMENT_METHODS[rawPaymentMethod]
-    ? ALLOWED_PAYMENT_METHODS[rawPaymentMethod]
-    : 'pix';
+  if (typeof rawPaymentMethod !== 'string' || !ALLOWED_PAYMENT_METHODS[rawPaymentMethod]) {
+    return res.status(400).json({ error: { code: 'INVALID_PAYMENT_METHOD', message: 'Método de pagamento inválido ou não suportado.' } });
+  }
 
-  if (typeof idempotencyKey !== 'string' || idempotencyKey.length < 16 || idempotencyKey.length > 128) {
+  const normalizedMethod = ALLOWED_PAYMENT_METHODS[rawPaymentMethod];
+
+  if (typeof idempotencyKey !== 'string' || !/^[A-Za-z0-9._:-]{16,128}$/.test(idempotencyKey)) {
     return res.status(400).json({ error: { code: 'INVALID_IDEMPOTENCY_KEY', message: 'Chave de idempotência inválida.' } });
   }
 
@@ -50,12 +52,15 @@ export async function handleCreatePaymentIntent(req: Request, res: Response) {
     });
 
     return res.json(result);
-  } catch (error) {
-    logger.error('Falha ao iniciar pagamento', { error, userId: uid });
-    return res.status(503).json({
+  } catch (error: any) {
+    logger.error('Falha ao iniciar pagamento', { error: error?.message || error, userId: uid });
+    const message = error?.message === 'PAYMENT_METHOD_NOT_SUPPORTED'
+      ? 'Este método de pagamento ainda não está disponível.'
+      : 'O provedor de pagamento não está disponível no momento.';
+    return res.status(error?.message === 'PAYMENT_METHOD_NOT_SUPPORTED' ? 400 : 503).json({
       error: {
-        code: 'PAYMENT_PROVIDER_UNAVAILABLE',
-        message: 'O provedor de pagamento não está disponível no momento.',
+        code: error?.message === 'PAYMENT_METHOD_NOT_SUPPORTED' ? 'PAYMENT_METHOD_NOT_SUPPORTED' : 'PAYMENT_PROVIDER_UNAVAILABLE',
+        message,
       },
     });
   }
@@ -64,7 +69,7 @@ export async function handleCreatePaymentIntent(req: Request, res: Response) {
 export async function handleCheckPaymentStatus(req: Request, res: Response) {
   const uid = req.athlete?.uid;
   const { transactionId } = req.params;
-  const provider = (req.query.provider as string) || 'pix_direct';
+  const provider = typeof req.query.provider === 'string' ? req.query.provider : 'pix_direct';
 
   if (!uid) {
     return res.status(401).json({ error: { code: 'UNAUTHORIZED', message: 'Usuário não autenticado.' } });
@@ -74,8 +79,22 @@ export async function handleCheckPaymentStatus(req: Request, res: Response) {
     return res.status(400).json({ error: { code: 'INVALID_TRANSACTION_ID', message: 'Identificador de transação inválido.' } });
   }
 
-  const status = await paymentManagerService.checkPaymentStatus(provider, transactionId);
-  return res.json({ transactionId, status });
+  const subscription = await subscriptionServerRepository.findBySubscriptionId(transactionId);
+  if (subscription && subscription.userId !== uid) {
+    return res.status(403).json({ error: { code: 'FORBIDDEN', message: 'Transação não pertence ao usuário autenticado.' } });
+  }
+
+  if (!subscription && process.env.NODE_ENV === 'production') {
+    return res.status(404).json({ error: { code: 'TRANSACTION_NOT_FOUND', message: 'Transação não encontrada.' } });
+  }
+
+  try {
+    const status = await paymentManagerService.checkPaymentStatus(provider, transactionId);
+    return res.json({ transactionId, status });
+  } catch (error: any) {
+    logger.error('Falha ao consultar status de pagamento', { userId: uid, transactionId, error: error?.message || error });
+    return res.status(503).json({ error: { code: 'PAYMENT_STATUS_UNAVAILABLE', message: 'Não foi possível consultar o status do pagamento.' } });
+  }
 }
 
 export async function handlePaymentWebhook(req: Request, res: Response) {
@@ -108,8 +127,8 @@ export async function handlePaymentWebhook(req: Request, res: Response) {
   }
 
   const rawPayload = (req as any).rawBody || (typeof req.body === 'string' ? req.body : JSON.stringify(req.body));
-
   const data = req.body?.data ?? {};
+
   if (typeof data.subscription_id !== 'string' || !data.subscription_id || typeof data.customer_id !== 'string' || !data.customer_id) {
     return res.status(400).json({ error: { code: 'INVALID_WEBHOOK_DATA', message: 'Dados mínimos do pagamento ausentes.' } });
   }
@@ -162,8 +181,8 @@ export async function handlePaymentWebhook(req: Request, res: Response) {
     }
 
     return res.json({ status: 'ok', result });
-  } catch (error) {
-    logger.error('Falha no processamento do webhook', { error, provider, eventId });
+  } catch (error: any) {
+    logger.error('Falha no processamento do webhook', { error: error?.message || error, provider, eventId });
     return res.status(500).json({ error: { code: 'WEBHOOK_PROCESSING_ERROR', message: 'Não foi possível processar o evento.' } });
   }
 }
@@ -178,8 +197,8 @@ export async function handleGetSubscriptionHistory(req: Request, res: Response) 
     const history = await subscriptionServerRepository.getHistoryByUserId(uid);
     return res.json({ history });
   } catch (err: any) {
-    logger.warn('Aviso ao buscar histórico de assinatura', { userId: uid, error: err?.message });
-    return res.json({ history: [] });
+    logger.error('Erro ao buscar histórico de assinatura', { userId: uid, error: err?.message });
+    return res.status(503).json({ error: { code: 'SUBSCRIPTION_HISTORY_UNAVAILABLE', message: 'Não foi possível carregar o histórico de assinatura.' } });
   }
 }
 
@@ -235,8 +254,18 @@ export async function handleChangePlan(req: Request, res: Response) {
     return res.status(400).json({ error: { code: 'INVALID_PLAN', message: 'Plano inválido especificado.' } });
   }
 
+  // Paid plan activation must come from a verified payment webhook.
+  if (planSlug !== 'FREE') {
+    return res.status(409).json({
+      error: {
+        code: 'PAYMENT_REQUIRED',
+        message: 'Alteração para um plano pago deve ser concluída através do fluxo de pagamento.',
+      },
+    });
+  }
+
   try {
-    const result = await entitlementService.changePlan(uid, planSlug);
+    const result = await entitlementService.changePlan(uid, 'FREE');
     const summary = await entitlementService.getEntitlementsSummary(uid);
     return res.json({ success: true, subscription: result, summary });
   } catch (err: any) {
@@ -244,4 +273,3 @@ export async function handleChangePlan(req: Request, res: Response) {
     return res.status(500).json({ error: { code: 'CHANGE_PLAN_ERROR', message: 'Não foi possível alterar o plano no momento.' } });
   }
 }
-
