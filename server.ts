@@ -41,9 +41,6 @@ function applyCors(app: express.Express) {
     const isSameOrigin = Boolean(host && (origin === `http://${host}` || origin === `https://${host}`));
     const isAllowed = allowedOrigins.has(origin) || isSameOrigin;
     if (!isAllowed) {
-      if (req.method === "OPTIONS") {
-        return res.status(403).json({ error: { code: "CORS_ORIGIN_DENIED", message: "Origem não autorizada." } });
-      }
       return res.status(403).json({ error: { code: "CORS_ORIGIN_DENIED", message: "Origem não autorizada." } });
     }
     res.setHeader("Access-Control-Allow-Origin", origin);
@@ -68,6 +65,7 @@ async function startServer() {
   const app = express();
   const PORT = SERVER_CONFIG.PORT;
   const isProduction = SERVER_CONFIG.NODE_ENV === "production";
+  const requireDatabaseReadiness = process.env.REQUIRE_DATABASE_READINESS === "true";
   if (SERVER_CONFIG.TRUST_PROXY) app.set("trust proxy", 1);
 
   applySecurityHeaders(app);
@@ -75,17 +73,34 @@ async function startServer() {
   app.use(express.json({ limit: "1mb", strict: true, verify: (req: any, _res, buf) => { req.rawBody = buf.toString("utf8"); } }));
   app.use(express.urlencoded({ extended: false, limit: "100kb" }));
 
-  app.get("/api/health", (_req, res) => res.status(200).json({ status: "ok", version: SERVER_CONFIG.APP_VERSION, environment: SERVER_CONFIG.NODE_ENV, timestamp: new Date().toISOString() }));
+  // Liveness must never depend on external services. This is the endpoint
+  // that cloud preview/container platforms can use to verify the process.
+  app.get("/api/health", (_req, res) => res.status(200).json({
+    status: "ok",
+    version: SERVER_CONFIG.APP_VERSION,
+    environment: SERVER_CONFIG.NODE_ENV,
+    timestamp: new Date().toISOString(),
+  }));
 
+  // Readiness is deliberately opt-in for external database checks. The UI
+  // preview must remain available when Firebase ADC is not configured.
   app.get("/api/ready", async (_req, res) => {
-    const firestore = await checkFirestore();
     const buildArtifactReady = !isProduction || fs.existsSync(path.join(process.cwd(), "dist", "index.html"));
-    const ready = firestore.connected && buildArtifactReady;
+    let databaseReady = true;
+    let databaseError: string | undefined;
+
+    if (requireDatabaseReadiness) {
+      const firestore = await checkFirestore();
+      databaseReady = firestore.connected;
+      databaseError = firestore.message;
+    }
+
+    const ready = buildArtifactReady && databaseReady;
     return res.status(ready ? 200 : 503).json({
       status: ready ? "ready" : "not_ready",
       version: SERVER_CONFIG.APP_VERSION,
-      checks: { database: firestore.connected, buildArtifacts: buildArtifactReady },
-      errors: firestore.connected ? undefined : { database: firestore.message },
+      checks: { database: databaseReady, buildArtifacts: buildArtifactReady },
+      errors: databaseError ? { database: databaseError } : undefined,
       timestamp: new Date().toISOString(),
     });
   });
@@ -99,7 +114,7 @@ async function startServer() {
 
   if (!isProduction) {
     const { createServer: createViteServer } = await import("vite");
-    const vite = await createViteServer({ server: { middlewareMode: true }, appType: "spa" });
+    const vite = await createViteServer({ server: { middlewareMode: true, host: "0.0.0.0" }, appType: "spa" });
     app.use(vite.middlewares);
   } else {
     const distPath = path.join(process.cwd(), "dist");
