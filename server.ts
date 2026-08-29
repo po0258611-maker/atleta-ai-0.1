@@ -14,82 +14,43 @@ import { getFirestoreAdapter } from "./server/repositories/firestoreAdapter";
 
 function applySecurityHeaders(app: express.Express) {
   const isProduction = SERVER_CONFIG.NODE_ENV === "production";
-
   app.disable("x-powered-by");
-
-  app.use((req, res, next) => {
+  app.use((_req, res, next) => {
     res.setHeader("X-Content-Type-Options", "nosniff");
     res.setHeader("Referrer-Policy", "strict-origin-when-cross-origin");
     res.setHeader("Permissions-Policy", "camera=(), microphone=(), geolocation=()");
     res.setHeader(
       "Content-Security-Policy",
       isProduction
-        ? "default-src 'self'; base-uri 'self'; frame-ancestors 'self' https:; object-src 'none'; img-src 'self' data: https: blob:; style-src 'self' 'unsafe-inline' https:; script-src 'self' 'unsafe-inline' 'unsafe-eval' https:; connect-src 'self' https: wss:; font-src 'self' data: https:"
-        : "default-src 'self' 'unsafe-inline' 'unsafe-eval' data: blob: https: http: ws: wss:; base-uri 'self'; frame-ancestors 'self' https: http:; object-src 'none'"
+        ? "default-src 'self'; base-uri 'self'; frame-ancestors 'self'; object-src 'none'; img-src 'self' data: https: blob:; style-src 'self' 'unsafe-inline'; script-src 'self' 'unsafe-inline' https:; connect-src 'self' https: wss:; font-src 'self' data: https:"
+        : "default-src 'self' 'unsafe-inline' 'unsafe-eval' data: blob: https: http: ws: wss:; base-uri 'self'; frame-ancestors 'self'; object-src 'none'"
     );
-
-    if (isProduction && (req.secure || req.headers["x-forwarded-proto"] === "https")) {
+    if (isProduction && (_req.secure || _req.headers["x-forwarded-proto"] === "https")) {
       res.setHeader("Strict-Transport-Security", "max-age=31536000; includeSubDomains");
     }
-
     next();
   });
 }
 
-function isTrustedAiStudioOrigin(originStr: string): boolean {
-  try {
-    const url = new URL(originStr);
-    const host = url.hostname.toLowerCase();
-    return (
-      host === "localhost" ||
-      host === "127.0.0.1" ||
-      host.endsWith(".run.app") ||
-      host.endsWith(".ai.studio") ||
-      host.endsWith(".aistudio.google.com") ||
-      host.endsWith(".google.com")
-    );
-  } catch {
-    return false;
-  }
-}
-
 function applyCors(app: express.Express) {
   const allowedOrigins = new Set(SERVER_CONFIG.CORS_ORIGINS);
-
   app.use((req, res, next) => {
     const origin = req.headers.origin;
-
-    if (!origin) {
-      return next();
-    }
-
+    if (!origin) return next();
     const host = req.headers.host;
     const isSameOrigin = Boolean(host && (origin === `http://${host}` || origin === `https://${host}`));
-    const isAllowed =
-      allowedOrigins.has("*") ||
-      allowedOrigins.has(origin) ||
-      isSameOrigin ||
-      isTrustedAiStudioOrigin(origin);
-
-    // An explicit allow-list is required for cross-origin browser requests.
+    const isAllowed = allowedOrigins.has(origin) || isSameOrigin;
     if (!isAllowed) {
       if (req.method === "OPTIONS") {
-        return res.status(403).json({
-          error: { code: "CORS_ORIGIN_DENIED", message: "Origem não autorizada." },
-        });
+        return res.status(403).json({ error: { code: "CORS_ORIGIN_DENIED", message: "Origem não autorizada." } });
       }
       return next();
     }
-
     res.setHeader("Access-Control-Allow-Origin", origin);
     res.setHeader("Vary", "Origin");
     res.setHeader("Access-Control-Allow-Headers", "Authorization, Content-Type, X-Idempotency-Key");
     res.setHeader("Access-Control-Allow-Methods", "GET, POST, PUT, PATCH, DELETE, OPTIONS");
-
-    if (req.method === "OPTIONS") {
-      return res.status(204).end();
-    }
-
+    if (req.method === "OPTIONS") return res.status(204).end();
     return next();
   });
 }
@@ -98,69 +59,23 @@ async function startServer() {
   const app = express();
   const PORT = SERVER_CONFIG.PORT;
   const isProduction = SERVER_CONFIG.NODE_ENV === "production";
-
-  // Set TRUST_PROXY=true only when the deployment is actually behind a trusted
-  // reverse proxy/load balancer. Never trust arbitrary client-supplied X-Forwarded-* headers.
-  if (process.env.TRUST_PROXY === "true") {
-    app.set("trust proxy", 1);
-  }
+  if (SERVER_CONFIG.TRUST_PROXY) app.set("trust proxy", 1);
 
   applySecurityHeaders(app);
   applyCors(app);
-
-  // JSON parser with strict payload limit and rawBody capture for webhook verification
-  app.use(
-    express.json({
-      limit: "1mb",
-      strict: true,
-      verify: (req: any, _res, buf) => {
-        req.rawBody = buf.toString("utf8");
-      },
-    })
-  );
+  app.use(express.json({ limit: "1mb", strict: true, verify: (req: any, _res, buf) => { req.rawBody = buf.toString("utf8"); } }));
   app.use(express.urlencoded({ extended: false, limit: "100kb" }));
 
-  // Liveness: only answers whether the Node process is alive.
-  app.get("/api/health", (_req, res) => {
-    res.status(200).json({
-      status: "ok",
-      version: "2.1.0",
-      environment: SERVER_CONFIG.NODE_ENV,
-      timestamp: new Date().toISOString(),
-    });
-  });
+  app.get("/api/health", (_req, res) => res.status(200).json({ status: "ok", version: SERVER_CONFIG.APP_VERSION, environment: SERVER_CONFIG.NODE_ENV, timestamp: new Date().toISOString() }));
 
-  // Readiness: verifies essential system dependencies needed for operation.
   app.get("/api/ready", (_req, res) => {
-    const isProd = SERVER_CONFIG.NODE_ENV === "production";
     const dbAdapter = getFirestoreAdapter();
-    const hasDb = Boolean(dbAdapter);
-    let buildArtifactReady = true;
-
-    if (isProd) {
-      buildArtifactReady = fs.existsSync(path.join(process.cwd(), "dist", "index.html"));
-    }
-
-    const ready = hasDb && buildArtifactReady;
-
-    if (!ready) {
-      return res.status(503).json({
-        status: "not_ready",
-        checks: {
-          database: hasDb,
-          buildArtifacts: buildArtifactReady,
-        },
-        timestamp: new Date().toISOString(),
-      });
-    }
-
-    return res.status(200).json({
-      status: "ready",
-      version: "2.1.0",
-      checks: {
-        database: hasDb,
-        buildArtifacts: buildArtifactReady,
-      },
+    const buildArtifactReady = !isProduction || fs.existsSync(path.join(process.cwd(), "dist", "index.html"));
+    const ready = Boolean(dbAdapter) && buildArtifactReady;
+    return res.status(ready ? 200 : 503).json({
+      status: ready ? "ready" : "not_ready",
+      version: SERVER_CONFIG.APP_VERSION,
+      checks: { database: Boolean(dbAdapter), buildArtifacts: buildArtifactReady },
       timestamp: new Date().toISOString(),
     });
   });
@@ -170,35 +85,24 @@ async function startServer() {
   app.use("/api/subscriptions", subscriptionRouter);
   app.use("/api/database", databaseRouter);
   app.use("/api", aiRouter);
-
   app.use(errorHandler);
 
   if (!isProduction) {
     const { createServer: createViteServer } = await import("vite");
-    const vite = await createViteServer({
-      server: { middlewareMode: true },
-      appType: "spa",
-    });
+    const vite = await createViteServer({ server: { middlewareMode: true }, appType: "spa" });
     app.use(vite.middlewares);
   } else {
     const distPath = path.join(process.cwd(), "dist");
     const indexPath = path.join(distPath, "index.html");
-    if (!fs.existsSync(indexPath)) {
-      logger.error(`Artefato de produção ausente: ${indexPath}`);
-      throw new Error(`Artefato de produção não encontrado em ${indexPath}. Execute 'npm run build' primeiro.`);
-    }
+    if (!fs.existsSync(indexPath)) throw new Error(`Artefato de produção não encontrado em ${indexPath}. Execute 'npm run build' primeiro.`);
     app.use(express.static(distPath));
-    app.get("*", (_req, res) => {
-      res.sendFile(indexPath);
-    });
+    app.get("*", (_req, res) => res.sendFile(indexPath));
   }
 
-  app.listen(PORT, "0.0.0.0", () => {
-    logger.info(`ATLETA AI Server running on port ${PORT}`);
-  });
+  app.listen(PORT, "0.0.0.0", () => logger.info(`ATLETA AI Server running on port ${PORT}`));
 }
 
 startServer().catch((error) => {
-  logger.error("Falha fatal ao iniciar o servidor", { error });
+  logger.error("Falha fatal ao iniciar o servidor", { error: error instanceof Error ? error.message : String(error) });
   process.exit(1);
 });
