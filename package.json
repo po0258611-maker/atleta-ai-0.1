@@ -9,7 +9,7 @@
   "scripts": {
     "dev": "NODE_ENV=development tsx server.ts",
     "build": "npm run clean && vite build && esbuild server.ts --bundle --platform=node --format=cjs --packages=external --sourcemap --outfile=server-dist/server.cjs",
-    "start": "NODE_ENV=production node server-dist/server.cjs",
+    "start": "npm run build && NODE_ENV=production node server-dist/server.cjs",
     "preview": "npm run build && NODE_ENV=production node server-dist/server.cjs",
     "clean": "rm -rf dist server-dist",
     "lint": "tsc --noEmit",
