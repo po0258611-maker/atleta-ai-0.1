@@ -26,8 +26,6 @@ if (isProduction && corsOrigins.length === 0) {
 const requestedPaymentMode = process.env.PAYMENT_MODE?.trim().toLowerCase() || 'disabled';
 const paymentsEnabled = process.env.PAYMENTS_ENABLED?.trim().toLowerCase() === 'true';
 
-// F1 deliberately does not activate a payment gateway. Live payments require an
-// explicit enable flag plus live mode in a later payment implementation phase.
 if (isProduction && paymentsEnabled && requestedPaymentMode !== 'live') {
   throw new Error('Production payments require PAYMENT_MODE=live.');
 }
@@ -38,8 +36,8 @@ export const SERVER_CONFIG = {
   CORS_ORIGINS: corsOrigins,
   GEMINI_MODEL: process.env.GEMINI_MODEL?.trim() || 'gemini-2.5-flash',
   GEMINI_API_KEY: process.env.GEMINI_API_KEY?.trim() || '',
-  SUPABASE_URL: isProduction ? requiredSecret('SUPABASE_URL') : (process.env.SUPABASE_URL?.trim() || ''),
-  SUPABASE_ANON_KEY: isProduction ? requiredSecret('SUPABASE_ANON_KEY') : (process.env.SUPABASE_ANON_KEY?.trim() || ''),
+  SUPABASE_URL: process.env.SUPABASE_URL?.trim() || '',
+  SUPABASE_ANON_KEY: process.env.SUPABASE_ANON_KEY?.trim() || '',
   FIREBASE_PROJECT_ID: isProduction || !isTest ? requiredProjectId() : (process.env.FIREBASE_PROJECT_ID?.trim() || ''),
   PAYMENT_MODE: requestedPaymentMode === 'live' ? 'live' : requestedPaymentMode === 'mock' ? 'mock' : 'disabled',
   PAYMENTS_ENABLED: paymentsEnabled,
