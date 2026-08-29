@@ -3,7 +3,6 @@ import { usageRepository } from '../repositories/usageRepository';
 import { PLAN_DEFINITIONS, FeatureKey, PlanDefinition, PlanSlug } from '../domain/planDefinitions';
 import {
   ServerSubscription,
-  SubscriptionStatus,
   CanonicalSubscriptionStatus,
   normalizeSubscriptionStatus,
 } from '../domain/subscriptionModel';
@@ -27,54 +26,27 @@ export interface UserPlanResolution {
 }
 
 export class EntitlementService {
-  /**
-   * Resolves plan strictly based on server-side database status.
-   * Single Source of Truth: The backend determines userId, plan, status, entitlements, quotas.
-   * Never trusts client headers or requests.
-   */
   async resolveUserPlan(userId: string): Promise<UserPlanResolution> {
     const sub = await subscriptionServerRepository.findByUserId(userId);
 
     if (!sub) {
-      return {
-        plan: PLAN_DEFINITIONS.FREE,
-        isFallback: true,
-        status: 'FREE',
-        isEntitled: false,
-        subscription: null,
-      };
+      return { plan: PLAN_DEFINITIONS.FREE, isFallback: true, status: 'FREE', isEntitled: false, subscription: null };
     }
 
     const rawStatus = normalizeSubscriptionStatus(sub.status);
     const now = Date.now();
     const periodEnd = new Date(sub.currentPeriodEnd).getTime();
-    const isExpired = isNaN(periodEnd) ? true : periodEnd < now;
+    const isExpired = Number.isNaN(periodEnd) ? true : periodEnd < now;
 
-    // 1. If explicit EXPIRED or time has elapsed past periodEnd
     if (rawStatus === 'EXPIRED' || (isExpired && rawStatus !== 'FREE')) {
-      return {
-        plan: PLAN_DEFINITIONS.FREE,
-        isFallback: true,
-        status: 'EXPIRED',
-        isEntitled: false,
-        subscription: sub,
-      };
+      return { plan: PLAN_DEFINITIONS.FREE, isFallback: true, status: 'EXPIRED', isEntitled: false, subscription: sub };
     }
 
-    // 2. If status is PAST_DUE (e.g. failed charge/invoice)
     if (rawStatus === 'PAST_DUE') {
-      return {
-        plan: PLAN_DEFINITIONS.FREE,
-        isFallback: true,
-        status: 'PAST_DUE',
-        isEntitled: false,
-        subscription: sub,
-      };
+      return { plan: PLAN_DEFINITIONS.FREE, isFallback: true, status: 'PAST_DUE', isEntitled: false, subscription: sub };
     }
 
-    // 3. If status is CANCELED
     if (rawStatus === 'CANCELED') {
-      // If user canceled but still has active grace period until periodEnd
       if (sub.cancelAtPeriodEnd && !isExpired) {
         const activePlan = PLAN_DEFINITIONS[sub.planId] || PLAN_DEFINITIONS.FREE;
         return {
@@ -85,22 +57,12 @@ export class EntitlementService {
           subscription: sub,
         };
       }
-
-      // Immediate cancellation or period ended
-      return {
-        plan: PLAN_DEFINITIONS.FREE,
-        isFallback: true,
-        status: 'CANCELED',
-        isEntitled: false,
-        subscription: sub,
-      };
+      return { plan: PLAN_DEFINITIONS.FREE, isFallback: true, status: 'CANCELED', isEntitled: false, subscription: sub };
     }
 
-    // 4. If status is ACTIVE or TRIAL
     if (rawStatus === 'ACTIVE' || rawStatus === 'TRIAL') {
       const activePlan = PLAN_DEFINITIONS[sub.planId] || PLAN_DEFINITIONS.FREE;
       const isEntitled = activePlan.slug !== 'FREE' && !isExpired;
-
       return {
         plan: isEntitled ? activePlan : PLAN_DEFINITIONS.FREE,
         isFallback: !isEntitled,
@@ -110,21 +72,11 @@ export class EntitlementService {
       };
     }
 
-    // 5. Default fallback to FREE
-    return {
-      plan: PLAN_DEFINITIONS.FREE,
-      isFallback: true,
-      status: 'FREE',
-      isEntitled: false,
-      subscription: sub,
-    };
+    return { plan: PLAN_DEFINITIONS.FREE, isFallback: true, status: 'FREE', isEntitled: false, subscription: sub };
   }
 
-  /**
-   * Evaluates feature access against plan rules and usage quotas
-   */
   async evaluateAccess(userId: string, feature: FeatureKey): Promise<AccessEvaluation> {
-    const { plan, status, isEntitled } = await this.resolveUserPlan(userId);
+    const { plan, status } = await this.resolveUserPlan(userId);
     const featureRule = plan.features[feature];
 
     if (!featureRule || !featureRule.enabled) {
@@ -138,20 +90,11 @@ export class EntitlementService {
       };
     }
 
-    // Unlimited check (-1)
     if (featureRule.monthlyLimit === -1) {
       const currentUsage = await usageRepository.getMonthlyUsage(userId, feature);
-      return {
-        granted: true,
-        reason: 'GRANTED',
-        currentUsage,
-        limit: -1,
-        remaining: -1,
-        planSlug: plan.slug,
-      };
+      return { granted: true, reason: 'GRANTED', currentUsage, limit: -1, remaining: -1, planSlug: plan.slug };
     }
 
-    // Capped check (>0)
     const currentUsage = await usageRepository.getMonthlyUsage(userId, feature);
     if (currentUsage >= featureRule.monthlyLimit) {
       return {
@@ -174,10 +117,11 @@ export class EntitlementService {
     };
   }
 
-  /**
-   * Atomically checks quota and consumes feature usage in a single transaction
-   */
   async consumeFeature(userId: string, feature: FeatureKey, delta: number = 1): Promise<AccessEvaluation> {
+    if (!Number.isInteger(delta) || delta < 1) {
+      throw new Error('INVALID_QUOTA_DELTA');
+    }
+
     const { plan, status } = await this.resolveUserPlan(userId);
     const featureRule = plan.features[feature];
 
@@ -192,14 +136,7 @@ export class EntitlementService {
       };
     }
 
-    // Operação Atômica no Firestore com verificação e incremento sob transação
-    const result = await usageRepository.consumeAtomic(
-      userId,
-      feature,
-      featureRule.monthlyLimit,
-      delta
-    );
-
+    const result = await usageRepository.consumeAtomic(userId, feature, featureRule.monthlyLimit, delta);
     if (!result.success) {
       return {
         granted: false,
@@ -221,9 +158,6 @@ export class EntitlementService {
     };
   }
 
-  /**
-   * Authoritative Single Source of Truth Summary for user subscription & entitlements
-   */
   async getEntitlementsSummary(userId: string) {
     const { plan, status, isEntitled, subscription } = await this.resolveUserPlan(userId);
     const featuresSummary: Record<string, unknown> = {};
@@ -248,7 +182,7 @@ export class EntitlementService {
       planSlug: plan.slug,
       planName: plan.name,
       status,
-      subscriptionStatus: status.toLowerCase(), // For backward compatibility with clients checking 'active'
+      subscriptionStatus: status.toLowerCase(),
       canonicalStatus: status,
       isSubscribed: isEntitled,
       isPremium: isEntitled && (plan.slug === 'PRO' || plan.slug === 'APEX_ELITE'),
@@ -262,16 +196,13 @@ export class EntitlementService {
       cancelAtPeriodEnd: subscription?.cancelAtPeriodEnd || false,
       canceledAt: subscription?.canceledAt || null,
       provider: subscription?.provider || null,
-      priceBrl: subscription?.priceBrl || (plan.priceCents / 100),
+      priceBrl: subscription?.priceBrl ?? plan.priceCents / 100,
       quotas: featuresSummary,
       features: featuresSummary,
     };
   }
 
-  /**
-   * Authoritative Subscription Cancellation
-   */
-  async cancelSubscription(userId: string, immediate: boolean = false): Promise<ServerSubscription | null> {
+  async cancelSubscription(userId: string, immediate = false): Promise<ServerSubscription | null> {
     const sub = await subscriptionServerRepository.findByUserId(userId);
     if (!sub) return null;
 
@@ -279,88 +210,68 @@ export class EntitlementService {
     const updatedSub: ServerSubscription = {
       ...sub,
       status: immediate ? 'CANCELED' : sub.status,
-      cancelAtPeriodEnd: true,
+      cancelAtPeriodEnd: immediate ? false : true,
       canceledAt: nowIso,
       autoRenew: false,
       updatedAt: nowIso,
     };
 
-    const saved = await subscriptionServerRepository.saveSubscription(updatedSub);
-    logger.info(`Assinatura cancelada no backend: ${userId} (imediato: ${immediate})`);
-    return saved;
+    return subscriptionServerRepository.saveSubscription(updatedSub);
   }
 
-  /**
-   * Authoritative Subscription Reactivation
-   */
   async reactivateSubscription(userId: string): Promise<ServerSubscription | null> {
     const sub = await subscriptionServerRepository.findByUserId(userId);
     if (!sub) return null;
 
     const nowIso = new Date().toISOString();
-    const updatedSub: ServerSubscription = {
+    return subscriptionServerRepository.saveSubscription({
       ...sub,
       status: 'ACTIVE',
       cancelAtPeriodEnd: false,
       canceledAt: null,
       autoRenew: true,
       updatedAt: nowIso,
-    };
-
-    const saved = await subscriptionServerRepository.saveSubscription(updatedSub);
-    logger.info(`Assinatura reativada no backend: ${userId}`);
-    return saved;
+    });
   }
 
-  /**
-   * Authoritative Plan Change (Upgrade / Downgrade)
-   */
   async changePlan(userId: string, newPlanSlug: PlanSlug): Promise<ServerSubscription | null> {
     const sub = await subscriptionServerRepository.findByUserId(userId);
     const targetPlan = PLAN_DEFINITIONS[newPlanSlug];
     if (!targetPlan) throw new Error(`Plano inválido: ${newPlanSlug}`);
 
-    const now = new Date();
-    const nowIso = now.toISOString();
+    // FREE means no paid entitlement. Do not create a synthetic payment/subscription
+    // record for a user who never had one.
+    if (newPlanSlug === 'FREE') {
+      if (!sub) return null;
+      const nowIso = new Date().toISOString();
+      return subscriptionServerRepository.saveSubscription({
+        ...sub,
+        planId: 'FREE',
+        status: 'FREE',
+        cancelAtPeriodEnd: false,
+        canceledAt: null,
+        autoRenew: false,
+        priceBrl: 0,
+        updatedAt: nowIso,
+      });
+    }
 
-    const updatedSub: ServerSubscription = {
-      id: sub?.id || `sub_${userId}`,
-      userId,
-      planId: newPlanSlug,
-      status: newPlanSlug === 'FREE' ? 'FREE' : 'ACTIVE',
-      provider: sub?.provider || 'pix_direct',
-      customerId: sub?.customerId || `cus_${userId}`,
-      subscriptionId: sub?.subscriptionId || `sub_${newPlanSlug.toLowerCase()}_${userId}`,
-      currentPeriodStart: nowIso,
-      currentPeriodEnd: new Date(now.getTime() + 30 * 24 * 60 * 60 * 1000).toISOString(),
-      cancelAtPeriodEnd: false,
-      canceledAt: null,
-      autoRenew: newPlanSlug !== 'FREE',
-      createdAt: sub?.createdAt || nowIso,
-      updatedAt: nowIso,
-      priceBrl: targetPlan.priceCents / 100,
-      lastPaymentDate: nowIso,
-    };
-
-    const saved = await subscriptionServerRepository.saveSubscription(updatedSub);
-    logger.info(`Plano alterado no backend: ${userId} -> ${newPlanSlug}`);
-    return saved;
+    // Paid-plan activation remains payment/webhook controlled.
+    throw new Error('PAYMENT_REQUIRED');
   }
 
-  /**
-   * Authoritative Renewal (e.g. monthly billing cycle execution)
-   */
-  async renewSubscription(userId: string, durationDays: number = 30): Promise<ServerSubscription | null> {
+  async renewSubscription(userId: string, durationDays = 30): Promise<ServerSubscription | null> {
+    if (!Number.isInteger(durationDays) || durationDays <= 0) throw new Error('INVALID_DURATION_DAYS');
     const sub = await subscriptionServerRepository.findByUserId(userId);
     if (!sub) return null;
 
     const now = new Date();
-    const nowIso = now.toISOString();
     const currentEnd = new Date(sub.currentPeriodEnd);
     const baseDate = currentEnd.getTime() > now.getTime() ? currentEnd : now;
     const newPeriodEnd = new Date(baseDate.getTime() + durationDays * 24 * 60 * 60 * 1000).toISOString();
+    const nowIso = now.toISOString();
 
-    const updatedSub: ServerSubscription = {
+    return subscriptionServerRepository.saveSubscription({
       ...sub,
       status: 'ACTIVE',
       cancelAtPeriodEnd: false,
@@ -370,13 +281,8 @@ export class EntitlementService {
       currentPeriodEnd: newPeriodEnd,
       lastPaymentDate: nowIso,
       updatedAt: nowIso,
-    };
-
-    const saved = await subscriptionServerRepository.saveSubscription(updatedSub);
-    logger.info(`Assinatura renovada no backend: ${userId} até ${newPeriodEnd}`);
-    return saved;
+    });
   }
 }
 
 export const entitlementService = new EntitlementService();
-
