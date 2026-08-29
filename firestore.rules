@@ -10,7 +10,14 @@ service cloud.firestore {
     }
 
     match /users/{userId} {
-      allow read, write: if isOwner(userId);
+      allow read: if isOwner(userId);
+      // Client may maintain only presentation metadata at the user root.
+      // Identity, roles, billing and privileged fields are server-authoritative.
+      allow create: if isOwner(userId)
+        && request.resource.data.keys().hasOnly(['displayName', 'updatedAt']);
+      allow update: if isOwner(userId)
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['displayName', 'updatedAt']);
+      allow delete: if false;
 
       match /profile/{docId} {
         allow read, write: if isOwner(userId);

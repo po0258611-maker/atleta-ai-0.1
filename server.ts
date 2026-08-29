@@ -42,11 +42,8 @@ function applyCors(app: express.Express) {
   app.use((req, res, next) => {
     const origin = req.headers.origin;
 
-    if (!origin) {
-      return next();
-    }
+    if (!origin) return next();
 
-    // An explicit allow-list is required for cross-origin browser requests.
     if (!allowedOrigins.has(origin)) {
       if (req.method === "OPTIONS") {
         return res.status(403).json({
@@ -61,10 +58,7 @@ function applyCors(app: express.Express) {
     res.setHeader("Access-Control-Allow-Headers", "Authorization, Content-Type, X-Idempotency-Key");
     res.setHeader("Access-Control-Allow-Methods", "GET, POST, PUT, PATCH, DELETE, OPTIONS");
 
-    if (req.method === "OPTIONS") {
-      return res.status(204).end();
-    }
-
+    if (req.method === "OPTIONS") return res.status(204).end();
     return next();
   });
 }
@@ -74,16 +68,11 @@ async function startServer() {
   const PORT = SERVER_CONFIG.PORT;
   const isProduction = SERVER_CONFIG.NODE_ENV === "production";
 
-  // Set TRUST_PROXY=true only when the deployment is actually behind a trusted
-  // reverse proxy/load balancer. Never trust arbitrary client-supplied X-Forwarded-* headers.
-  if (process.env.TRUST_PROXY === "true") {
-    app.set("trust proxy", 1);
-  }
+  if (SERVER_CONFIG.TRUST_PROXY) app.set("trust proxy", 1);
 
   applySecurityHeaders(app);
   applyCors(app);
 
-  // JSON parser with strict payload limit and rawBody capture for webhook verification
   app.use(
     express.json({
       limit: "1mb",
@@ -95,11 +84,21 @@ async function startServer() {
   );
   app.use(express.urlencoded({ extended: false, limit: "100kb" }));
 
-  // Liveness: only answers whether the Node process is alive.
   app.get("/api/health", (_req, res) => {
     res.status(200).json({
       status: "ok",
-      version: "2.1.0",
+      version: "2.6.0",
+      environment: SERVER_CONFIG.NODE_ENV,
+      timestamp: new Date().toISOString(),
+    });
+  });
+
+  app.get("/api/ready", (_req, res) => {
+    // Readiness is intentionally lightweight here. Provider-specific diagnostics
+    // remain authenticated under /api/database/status.
+    res.status(200).json({
+      status: "ready",
+      version: "2.6.0",
       environment: SERVER_CONFIG.NODE_ENV,
       timestamp: new Date().toISOString(),
     });

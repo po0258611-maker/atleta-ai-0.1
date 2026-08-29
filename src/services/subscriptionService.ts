@@ -6,13 +6,11 @@ const STORAGE_SUBSCRIPTION_KEY = 'athleta_ai_subscription_state';
 const DEFAULT_SUBSCRIPTION: SubscriptionState = {
   isSubscribed: false,
   planId: 'pro_monthly',
-  planName: 'Plano Athleta AI PRO',
-  priceBrl: 15.00,
-  status: 'active',
+  planName: 'Plano Gratuito Atleta AI',
+  priceBrl: 0,
+  status: 'expired',
   billingCycle: 'monthly',
-  renewsAt: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString(),
-  paymentMethod: 'pix',
-  lastPaymentDate: new Date().toISOString(),
+  renewsAt: '',
 };
 
 export interface PaymentIntentResponse {
@@ -30,15 +28,53 @@ export interface PaymentIntentResponse {
   createdAt: string;
 }
 
+function mapServerSubscription(entitlements: {
+  isSubscribed: boolean;
+  planSlug: string;
+  planName: string;
+  priceBrl?: number;
+  subscriptionStatus: string;
+  currentPeriodEnd: string | null;
+  cancelAtPeriodEnd: boolean;
+  provider: string | null;
+}): SubscriptionState {
+  const isApex = entitlements.planSlug === 'APEX_ELITE';
+  const status = entitlements.subscriptionStatus.toLowerCase();
+  const normalizedStatus: SubscriptionState['status'] =
+    status === 'active' ? 'active' :
+    status === 'trial' || status === 'trialing' ? 'trialing' :
+    status === 'canceled' || status === 'cancelled' ? 'canceled' :
+    'expired';
+
+  return {
+    isSubscribed: entitlements.isSubscribed,
+    planId: isApex ? 'pro_annual' : 'pro_monthly',
+    planName: entitlements.planName,
+    priceBrl: typeof entitlements.priceBrl === 'number' ? entitlements.priceBrl : (isApex ? 120 : 15),
+    status: normalizedStatus,
+    billingCycle: isApex ? 'yearly' : 'monthly',
+    renewsAt: entitlements.currentPeriodEnd || '',
+    paymentMethod: mapProviderToPaymentMethod(entitlements.provider),
+  };
+}
+
+function mapProviderToPaymentMethod(provider: string | null): SubscriptionState['paymentMethod'] {
+  if (provider === 'stripe') return 'credit_card';
+  if (provider === 'pix' || provider === 'pix_direct') return 'pix';
+  return undefined;
+}
+
 /**
- * Loads subscription state strictly from the server entitlements endpoint
+ * Loads subscription state strictly from the server entitlement authority.
+ * A server/database failure fails closed to FREE instead of trusting stale premium cache.
  */
-export const getSubscriptionState = async (uid?: string): Promise<SubscriptionState> => {
+export const getSubscriptionState = async (_uid?: string): Promise<SubscriptionState> => {
   try {
     const entitlements = await apiRequest<{
       isSubscribed: boolean;
       planSlug: string;
       planName: string;
+      priceBrl?: number;
       subscriptionStatus: string;
       currentPeriodEnd: string | null;
       cancelAtPeriodEnd: boolean;
@@ -46,33 +82,38 @@ export const getSubscriptionState = async (uid?: string): Promise<SubscriptionSt
     }>('/api/entitlements/me');
 
     if (entitlements) {
-      const serverState: SubscriptionState = {
-        isSubscribed: entitlements.isSubscribed,
-        planId: entitlements.planSlug === 'APEX_ELITE' ? 'pro_annual' : 'pro_monthly',
-        planName: entitlements.planName,
-        priceBrl: entitlements.planSlug === 'APEX_ELITE' ? 120.00 : 15.00,
-        status: entitlements.subscriptionStatus === 'active' ? 'active' : 'canceled',
-        billingCycle: entitlements.planSlug === 'APEX_ELITE' ? 'yearly' : 'monthly',
-        renewsAt: entitlements.currentPeriodEnd || new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString(),
-        paymentMethod: (entitlements.provider as any) || 'pix',
-        lastPaymentDate: new Date().toISOString(),
-      };
+      const serverState = mapServerSubscription(entitlements);
       localStorage.setItem(STORAGE_SUBSCRIPTION_KEY, JSON.stringify(serverState));
       return serverState;
     }
   } catch (err) {
-    console.warn('Falha ao consultar servidor de assinaturas, usando cache:', err);
+    console.warn('Falha ao consultar servidor de assinaturas; estado do cliente será FREE por segurança.', err);
   }
 
-  return getCachedSubscriptionState();
+  return { ...DEFAULT_SUBSCRIPTION };
 };
 
+/**
+ * Cached state is presentation-only. It must never be used to grant premium API access.
+ * Legacy active/canceled values are normalized to avoid treating malformed cache data as authority.
+ */
 export const getCachedSubscriptionState = (): SubscriptionState => {
   try {
     const data = localStorage.getItem(STORAGE_SUBSCRIPTION_KEY);
-    return data ? JSON.parse(data) : DEFAULT_SUBSCRIPTION;
+    if (!data) return { ...DEFAULT_SUBSCRIPTION };
+
+    const parsed = JSON.parse(data) as Partial<SubscriptionState>;
+    if (!parsed || typeof parsed !== 'object') return { ...DEFAULT_SUBSCRIPTION };
+
+    return {
+      ...DEFAULT_SUBSCRIPTION,
+      ...parsed,
+      isSubscribed: parsed.isSubscribed === true,
+      priceBrl: typeof parsed.priceBrl === 'number' ? parsed.priceBrl : 0,
+      renewsAt: typeof parsed.renewsAt === 'string' ? parsed.renewsAt : '',
+    };
   } catch {
-    return DEFAULT_SUBSCRIPTION;
+    return { ...DEFAULT_SUBSCRIPTION };
   }
 };
 
@@ -84,73 +125,54 @@ export const saveSubscriptionState = async (state: SubscriptionState): Promise<v
   }
 };
 
-/**
- * Creates a real Server-Side PIX Order with genuine payload & idempotency
- */
+/** Payment functions remain present for the future payment integration phase. */
 export const createPixOrder = async (
   planSlug: 'PRO' | 'APEX_ELITE' = 'PRO'
 ): Promise<PaymentIntentResponse> => {
   const idempotencyKey = `pix_order_${Date.now()}_${Math.random().toString(36).substring(2, 8)}`;
-  
   return await apiRequest<PaymentIntentResponse>('/api/subscriptions/create-intent', {
     method: 'POST',
-    body: JSON.stringify({
-      paymentMethod: 'pix',
-      planSlug,
-      idempotencyKey,
-    }),
+    body: JSON.stringify({ paymentMethod: 'pix', planSlug, idempotencyKey }),
   });
 };
 
-/**
- * Checks verification status of a PIX / Gateway payment with the server
- */
 export const checkPaymentStatus = async (
   transactionId: string,
   provider: string = 'pix_direct'
 ): Promise<{ status: string }> => {
   return await apiRequest<{ transactionId: string; status: string }>(
-    `/api/subscriptions/status/${transactionId}?provider=${provider}`
+    `/api/subscriptions/status/${encodeURIComponent(transactionId)}?provider=${encodeURIComponent(provider)}`
   );
 };
 
-/**
- * Creates a server-side Stripe checkout session or tokenized card payment intent
- */
 export const createCardCheckoutSession = async (
   planSlug: 'PRO' | 'APEX_ELITE' = 'PRO'
 ): Promise<PaymentIntentResponse> => {
   const idempotencyKey = `card_order_${Date.now()}_${Math.random().toString(36).substring(2, 8)}`;
-
   return await apiRequest<PaymentIntentResponse>('/api/subscriptions/create-intent', {
     method: 'POST',
-    body: JSON.stringify({
-      paymentMethod: 'credit_card',
-      planSlug,
-      idempotencyKey,
-    }),
+    body: JSON.stringify({ paymentMethod: 'credit_card', planSlug, idempotencyKey }),
   });
 };
 
-export const cancelSubscription = async (uid?: string): Promise<SubscriptionState> => {
+export const cancelSubscription = async (_uid?: string): Promise<SubscriptionState> => {
   try {
     const res = await apiRequest<{ success: boolean; summary: any }>('/api/subscriptions/cancel', {
       method: 'POST',
       body: JSON.stringify({ immediate: false }),
     });
 
-    if (res && res.summary) {
-      const serverState: SubscriptionState = {
+    if (res?.summary) {
+      const serverState = mapServerSubscription({
         isSubscribed: res.summary.isSubscribed,
-        planId: res.summary.planSlug === 'APEX_ELITE' ? 'pro_annual' : 'pro_monthly',
+        planSlug: res.summary.planSlug,
         planName: res.summary.planName,
         priceBrl: res.summary.priceBrl,
-        status: res.summary.canonicalStatus === 'ACTIVE' || res.summary.status === 'ACTIVE' ? 'active' : 'canceled',
-        billingCycle: res.summary.planSlug === 'APEX_ELITE' ? 'yearly' : 'monthly',
-        renewsAt: res.summary.currentPeriodEnd || new Date().toISOString(),
-        paymentMethod: (res.summary.provider as any) || 'pix',
-        lastPaymentDate: new Date().toISOString(),
-      };
+        subscriptionStatus: res.summary.canonicalStatus || res.summary.status,
+        currentPeriodEnd: res.summary.currentPeriodEnd,
+        cancelAtPeriodEnd: res.summary.cancelAtPeriodEnd,
+        provider: res.summary.provider,
+      });
       localStorage.setItem(STORAGE_SUBSCRIPTION_KEY, JSON.stringify(serverState));
       return serverState;
     }
@@ -158,16 +180,8 @@ export const cancelSubscription = async (uid?: string): Promise<SubscriptionStat
     console.warn('Erro ao cancelar assinatura no servidor:', err);
   }
 
-  const current = getCachedSubscriptionState();
-  const newState: SubscriptionState = {
-    ...current,
-    status: 'canceled',
-    isSubscribed: false,
-  };
-  localStorage.setItem(STORAGE_SUBSCRIPTION_KEY, JSON.stringify(newState));
-  return newState;
+  return { ...DEFAULT_SUBSCRIPTION };
 };
-
 
 export const PLAN_CONFIGS = {
   pro_monthly: {
@@ -221,7 +235,7 @@ export const processGooglePlayPurchase = async (
   return {
     success: true,
     code: 'BILLING_SUCCESS',
-    message: `Ordem Google Play registrada com sucesso!`,
+    message: 'Ordem Google Play registrada com sucesso!',
     orderId: `GPA.${Math.floor(1000 + Math.random() * 9000)}-${Math.floor(1000 + Math.random() * 9000)}`,
     subscriptionState: updatedState,
   };

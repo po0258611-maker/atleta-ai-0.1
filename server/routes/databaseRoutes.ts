@@ -1,204 +1,180 @@
 import { Router, Request, Response } from 'express';
 import { createClient } from '@supabase/supabase-js';
+import { SERVER_CONFIG } from '../config/env';
+import { getAdminFirestore } from '../services/firebaseAdmin';
+import { requireAuth } from '../middlewares/auth';
+import { requireRole } from '../middlewares/authorization';
 
 export const databaseRouter = Router();
 
-function sanitizeSupabaseUrl(rawUrl?: string): string {
-  const trimmed = (rawUrl || '').trim();
-  if (!trimmed) {
-    return 'https://ivnxxXsZ7nIkhSmjl8t2A.supabase.co';
-  }
-  if (!trimmed.startsWith('http://') && !trimmed.startsWith('https://')) {
-    return `https://${trimmed}`;
-  }
-  return trimmed;
-}
-
-const SUPABASE_URL = sanitizeSupabaseUrl(process.env.SUPABASE_URL);
-const SUPABASE_KEY = (process.env.SUPABASE_ANON_KEY || '').trim() || 'sb_publishable_1ivnxxXsZ7nIkhSmjl8t2A_tvWn9LeJ';
-
 function getSupabaseServer() {
-  return createClient(SUPABASE_URL, SUPABASE_KEY);
+  if (!SERVER_CONFIG.SUPABASE_URL || !SERVER_CONFIG.SUPABASE_ANON_KEY) {
+    throw new Error('SUPABASE_CONFIGURATION_MISSING');
+  }
+  return createClient(SERVER_CONFIG.SUPABASE_URL, SERVER_CONFIG.SUPABASE_ANON_KEY);
 }
 
-// 1. Database Connectivity & Health Status
-databaseRouter.get('/status', async (_req: Request, res: Response) => {
+databaseRouter.get('/status', requireAuth, async (_req: Request, res: Response) => {
   const startTime = Date.now();
+  const providers: Record<string, unknown> = {};
+  let healthy = true;
+
   try {
     const client = getSupabaseServer();
     const { error } = await client.auth.getSession();
     const latency = Date.now() - startTime;
-
-    return res.status(200).json({
-      providers: {
-        supabase: {
-          name: 'Supabase PostgreSQL & Auth',
-          connected: !error,
-          url: SUPABASE_URL,
-          publishableKeyMasked: `${SUPABASE_KEY.slice(0, 14)}...${SUPABASE_KEY.slice(-6)}`,
-          status: error ? 'error' : 'online',
-          message: error ? error.message : 'Conexão Supabase operacional',
-          latencyMs: latency,
-        },
-        firestore: {
-          name: 'Firebase Firestore & Auth',
-          connected: true,
-          projectId: process.env.FIREBASE_PROJECT_ID || 'storied-cable-xn50x',
-          status: 'online',
-          latencyMs: Math.max(12, Math.floor(latency * 0.8)),
-          features: ['Real-time Synchronization', 'Offline Persistence', 'Subcollections RBAC']
-        },
-        localCache: {
-          name: 'IndexedDB & Encrypted Local Store',
-          status: 'online',
-          latencyMs: 1,
-        }
-      },
-      timestamp: new Date().toISOString(),
-    });
-  } catch (err: unknown) {
-    const errorMsg = err instanceof Error ? err.message : 'Erro interno';
-    return res.status(500).json({
-      success: false,
-      error: errorMsg,
-      timestamp: new Date().toISOString(),
-    });
+    const connected = !error;
+    healthy = healthy && connected;
+    providers.supabase = {
+      name: 'Supabase PostgreSQL & Auth',
+      connected,
+      url: SERVER_CONFIG.SUPABASE_URL,
+      publishableKeyMasked: `${SERVER_CONFIG.SUPABASE_ANON_KEY.slice(0, 6)}...${SERVER_CONFIG.SUPABASE_ANON_KEY.slice(-4)}`,
+      status: connected ? 'online' : 'error',
+      message: error ? error.message : 'Conexão Supabase operacional',
+      latencyMs: latency,
+    };
+  } catch (error: unknown) {
+    healthy = false;
+    providers.supabase = {
+      name: 'Supabase PostgreSQL & Auth',
+      connected: false,
+      url: SERVER_CONFIG.SUPABASE_URL,
+      publishableKeyMasked: SERVER_CONFIG.SUPABASE_ANON_KEY ? `${SERVER_CONFIG.SUPABASE_ANON_KEY.slice(0, 6)}...${SERVER_CONFIG.SUPABASE_ANON_KEY.slice(-4)}` : '',
+      status: 'error',
+      message: error instanceof Error ? error.message : 'Falha de conexão',
+      latencyMs: Date.now() - startTime,
+    };
   }
-});
 
-// 2. Real-time Ping Latency Benchmark
-databaseRouter.get('/ping', async (_req: Request, res: Response) => {
-  const start = Date.now();
+  const firestoreStart = Date.now();
   try {
-    const client = getSupabaseServer();
-    await client.auth.getSession();
-    const roundtrip = Date.now() - start;
-    return res.json({
-      success: true,
-      roundtripMs: roundtrip,
-      status: roundtrip < 200 ? 'excellent' : roundtrip < 600 ? 'good' : 'fair',
-      timestamp: new Date().toISOString(),
-    });
-  } catch {
-    const fallbackRoundtrip = Date.now() - start;
-    return res.json({
-      success: true,
-      roundtripMs: fallbackRoundtrip,
-      status: 'fair',
-      timestamp: new Date().toISOString(),
-    });
+    await getAdminFirestore().collection('health').doc('readiness').get();
+    providers.firestore = {
+      name: 'Firebase Firestore & Auth',
+      connected: true,
+      projectId: SERVER_CONFIG.FIREBASE_PROJECT_ID,
+      status: 'online',
+      latencyMs: Date.now() - firestoreStart,
+      features: ['Real-time Synchronization', 'Offline Persistence', 'Subcollections RBAC'],
+    };
+  } catch (error: unknown) {
+    healthy = false;
+    providers.firestore = {
+      name: 'Firebase Firestore & Auth',
+      connected: false,
+      projectId: SERVER_CONFIG.FIREBASE_PROJECT_ID,
+      status: 'error',
+      latencyMs: Date.now() - firestoreStart,
+      features: [],
+      message: error instanceof Error ? error.message : 'Falha de conexão',
+    };
   }
-});
 
-// 3. Database Schema Dictionary & Metadata
-databaseRouter.get('/schema', (_req: Request, res: Response) => {
-  res.json({
-    version: '2.5.0',
-    engine: 'Hybrid Firestore + Supabase PostgreSQL',
-    collections: [
-      {
-        name: 'users',
-        description: 'Perfis de atletas, credenciais e configurações biométricas',
-        primaryKey: 'uid (UUID)',
-        indexes: ['email', 'createdAt', 'role'],
-        fields: ['uid', 'email', 'name', 'gender', 'age', 'weight', 'height', 'goal', 'experienceLevel', 'gymEnvironment', 'createdAt', 'updatedAt']
-      },
-      {
-        name: 'workouts',
-        description: 'Planilhas e periodizações de treino ativas geradas pelo Workout Engine',
-        path: 'users/{uid}/workouts/active',
-        primaryKey: 'programId',
-        indexes: ['uid', 'generatedAt', 'frequency'],
-        fields: ['id', 'name', 'cycleName', 'frequency', 'days', 'generatedAt', 'updatedAt']
-      },
-      {
-        name: 'exerciseLogs',
-        description: 'Registros de séries, repetições, RIR, RPE, volume de carga e fadiga',
-        path: 'users/{uid}/exerciseLogs/{logId}',
-        primaryKey: 'logId',
-        indexes: ['uid', 'date', 'exerciseName', 'muscleGroup'],
-        fields: ['id', 'exerciseName', 'muscleGroup', 'date', 'sets', 'totalVolume', 'notes', 'e1RM', 'fatigueLevel', 'rpe']
-      },
-      {
-        name: 'measurements',
-        description: 'Histórico de medidas corporais, circunferências e composição de dobras',
-        path: 'users/{uid}/measurements/{recordId}',
-        primaryKey: 'recordId',
-        indexes: ['uid', 'date'],
-        fields: ['id', 'date', 'weight', 'bodyFat', 'chest', 'waist', 'arms', 'thighs', 'calves']
-      },
-      {
-        name: 'subscriptions',
-        description: 'Estado das assinaturas server-authoritative e histórico de transações',
-        path: 'users/{uid}/subscription/current',
-        primaryKey: 'subscriptionId',
-        indexes: ['uid', 'status', 'tier'],
-        fields: ['tier', 'status', 'currentPeriodEnd', 'cancelAtPeriodEnd', 'gateway', 'lastAuditTimestamp']
-      },
-      {
-        name: 'sessions',
-        description: 'Sessões ativas em dispositivos e tokens de autorização',
-        path: 'users/{uid}/sessions/{sessionId}',
-        primaryKey: 'sessionId',
-        indexes: ['uid', 'lastActive'],
-        fields: ['id', 'name', 'type', 'location', 'lastActive', 'isCurrent', 'createdAt']
-      },
-      {
-        name: 'achievements',
-        description: 'Conquistas, insígnias e marcas de sobrecarga desbloqueadas',
-        path: 'users/{uid}/achievements/{badgeId}',
-        primaryKey: 'badgeId',
-        indexes: ['uid', 'unlockedAt'],
-        fields: ['id', 'title', 'description', 'category', 'unlockedAt', 'xpValue']
-      }
-    ]
+  providers.localCache = {
+    name: 'IndexedDB & Local Store',
+    status: 'browser-dependent',
+    latencyMs: 1,
+  };
+
+  return res.status(healthy ? 200 : 503).json({
+    status: healthy ? 'healthy' : 'degraded',
+    providers,
+    timestamp: new Date().toISOString(),
   });
 });
 
-// 4. Data Audit & Integrity Inspector
-databaseRouter.post('/integrity-check', (req: Request, res: Response) => {
-  const { logs, profile, measurements } = req.body || {};
+databaseRouter.get('/ping', requireAuth, async (_req: Request, res: Response) => {
+  const start = Date.now();
+  try {
+    const client = getSupabaseServer();
+    const { error } = await client.auth.getSession();
+    const roundtripMs = Date.now() - start;
+    if (error) {
+      return res.status(503).json({ success: false, roundtripMs, status: 'error', error: 'SUPABASE_UNAVAILABLE', timestamp: new Date().toISOString() });
+    }
+    return res.json({ success: true, roundtripMs, status: roundtripMs < 200 ? 'excellent' : roundtripMs < 600 ? 'good' : 'fair', timestamp: new Date().toISOString() });
+  } catch (error: unknown) {
+    return res.status(503).json({ success: false, roundtripMs: Date.now() - start, status: 'error', error: error instanceof Error ? error.message : 'DATABASE_UNAVAILABLE', timestamp: new Date().toISOString() });
+  }
+});
 
+databaseRouter.get('/schema', requireAuth, (_req: Request, res: Response) => {
+  return res.json({
+    version: '2.6.0',
+    engine: 'Firebase Auth + Firestore authoritative persistence; Supabase compatibility layer',
+    collections: [
+      {
+        name: 'users', description: 'Identidade e metadados mínimos do atleta', primaryKey: 'uid', path: 'users/{uid}', indexes: [], fields: ['uid', 'displayName', 'updatedAt'],
+      },
+      {
+        name: 'profile', description: 'Perfil do atleta e parâmetros de treino', primaryKey: 'current', path: 'users/{uid}/profile/current', indexes: [], fields: ['name', 'gender', 'age', 'heightCm', 'weightKg', 'experience', 'objective', 'environment'],
+      },
+      {
+        name: 'workouts', description: 'Programa Full Body ativo', primaryKey: 'active', path: 'users/{uid}/workouts/active', indexes: [], fields: ['id', 'createdAt', 'methodology', 'splitDays', 'weeklyVolumeMap', 'frequencyMap'],
+      },
+      {
+        name: 'exerciseLogs', description: 'Histórico de execução, séries, RIR, RPE e carga', primaryKey: 'logId', path: 'users/{uid}/exerciseLogs/{logId}', indexes: ['date'], fields: ['id', 'date', 'dayId', 'durationMin', 'exerciseLogs', 'sessionRPE', 'notes'],
+      },
+      {
+        name: 'progression', description: 'Agregados de desempenho e streak', primaryKey: 'stats', path: 'users/{uid}/progression/stats', indexes: [], fields: ['uid', 'totalWorkouts', 'totalVolumeKg', 'currentStreakDays', 'lastWorkoutDate', 'updatedAt'],
+      },
+      {
+        name: 'settings', description: 'Preferências do usuário', primaryKey: 'preferences', path: 'users/{uid}/settings/preferences', indexes: [], fields: ['theme', 'notifications', 'soundEffects', 'hapticFeedback', 'language'],
+      },
+      {
+        name: 'measurements', description: 'Histórico de medidas corporais', primaryKey: 'recordId', path: 'users/{uid}/measurements/{recordId}', indexes: ['date'], fields: ['id', 'date', 'weightKg', 'heightCm', 'bodyFatPercentage', 'chestCm', 'waistCm', 'armCm', 'thighCm'],
+      },
+      {
+        name: 'subscriptions', description: 'Estado de assinatura server-authoritative', primaryKey: 'uid', path: 'subscriptions/{uid}', indexes: ['status', 'planId'], fields: ['id', 'userId', 'planId', 'status', 'provider', 'currentPeriodStart', 'currentPeriodEnd', 'cancelAtPeriodEnd', 'updatedAt'], authority: 'server',
+      },
+      {
+        name: 'subscription_history', description: 'Auditoria de mudanças de assinatura', primaryKey: 'historyId', path: 'subscription_history/{historyId}', indexes: ['userId', 'timestamp'], fields: ['id', 'subscriptionId', 'userId', 'eventType', 'statusBefore', 'statusAfter', 'timestamp'], authority: 'server',
+      },
+      {
+        name: 'webhook_events', description: 'Idempotência e auditoria de eventos externos', primaryKey: 'provider_eventId', path: 'webhook_events/{provider_eventId}', indexes: ['provider', 'eventId'], fields: ['provider', 'eventId', 'eventType', 'status', 'receivedAt', 'processedAt'], authority: 'server',
+      },
+      {
+        name: 'usage', description: 'Contadores de quota por usuário, métrica e período', primaryKey: 'user_metric_period', path: 'usage/{user_metric_period}', indexes: ['userId', 'metric', 'period'], fields: ['userId', 'metric', 'period', 'count', 'updatedAt'], authority: 'server',
+      },
+    ],
+  });
+});
+
+databaseRouter.post('/integrity-check', requireAuth, requireRole(['ADMIN']), (req: Request, res: Response) => {
+  const { logs, profile, measurements } = req.body || {};
   const issues: { level: 'info' | 'warning' | 'error'; message: string; field?: string }[] = [];
   let checkedRecordsCount = 0;
 
-  if (profile) {
+  if (profile && typeof profile === 'object') {
     checkedRecordsCount++;
-    if (!profile.name || profile.name.trim().length === 0) {
-      issues.push({ level: 'warning', message: 'Nome do atleta não preenchido no perfil.', field: 'name' });
-    }
-    if (profile.weight && (profile.weight < 30 || profile.weight > 300)) {
-      issues.push({ level: 'warning', message: `Peso informado (${profile.weight} kg) fora da faixa biométrica usual.`, field: 'weight' });
-    }
+    if (typeof profile.name !== 'string' || profile.name.trim() === '') issues.push({ level: 'warning', message: 'Nome do atleta não preenchido no perfil.', field: 'name' });
+    if (typeof profile.weight === 'number' && (profile.weight < 30 || profile.weight > 300)) issues.push({ level: 'warning', message: `Peso informado (${profile.weight} kg) fora da faixa biométrica usual.`, field: 'weight' });
   }
 
   if (Array.isArray(logs)) {
     checkedRecordsCount += logs.length;
     logs.forEach((log: any, idx: number) => {
-      if (!log.exerciseName) {
-        issues.push({ level: 'error', message: `Registro de log #${idx + 1} sem nome de exercício associado.` });
+      if (!log || typeof log !== 'object') {
+        issues.push({ level: 'error', message: `Registro de log #${idx + 1} inválido.` });
+        return;
       }
-      if (!Array.isArray(log.sets) || log.sets.length === 0) {
-        issues.push({ level: 'warning', message: `Log #${idx + 1} (${log.exerciseName || 'Desconhecido'}) sem séries computadas.` });
-      } else {
+      if (typeof log.exerciseName !== 'string' && (!Array.isArray(log.exerciseLogs) || log.exerciseLogs.length === 0)) {
+        issues.push({ level: 'error', message: `Registro de log #${idx + 1} sem exercícios associados.` });
+      }
+      if (Array.isArray(log.sets)) {
         log.sets.forEach((set: any, sIdx: number) => {
-          if (set.reps <= 0) {
-            issues.push({ level: 'warning', message: `Log #${idx + 1}, Série ${sIdx + 1}: contagem de repetições menor ou igual a zero.` });
-          }
-          if (set.weight < 0) {
-            issues.push({ level: 'error', message: `Log #${idx + 1}, Série ${sIdx + 1}: carga negativa detectada (${set.weight} kg).` });
-          }
+          if (!set || typeof set !== 'object') issues.push({ level: 'error', message: `Log #${idx + 1}, Série ${sIdx + 1}: estrutura inválida.` });
+          else if (typeof set.weight === 'number' && set.weight < 0) issues.push({ level: 'error', message: `Log #${idx + 1}, Série ${sIdx + 1}: carga negativa detectada.` });
         });
       }
     });
   }
 
-  if (Array.isArray(measurements)) {
-    checkedRecordsCount += measurements.length;
-  }
+  if (Array.isArray(measurements)) checkedRecordsCount += measurements.length;
 
   return res.json({
-    status: issues.some(i => i.level === 'error') ? 'needs_repair' : issues.length > 0 ? 'warnings_found' : 'healthy',
+    status: issues.some((i) => i.level === 'error') ? 'needs_repair' : issues.length ? 'warnings_found' : 'healthy',
     checkedRecordsCount,
     issuesCount: issues.length,
     issues,
