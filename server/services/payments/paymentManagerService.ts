@@ -63,6 +63,14 @@ export class PaymentManagerService {
       if (transaction.planSlug !== plan.slug) throw new Error('MERCADOPAGO_PLAN_MISMATCH');
       if (transaction.currency !== 'BRL' || transaction.amountCents !== plan.amountCents) throw new Error('MERCADOPAGO_TRANSACTION_AMOUNT_MISMATCH');
       if (transaction.status === 'refunded' || transaction.status === 'canceled') throw new Error('MERCADOPAGO_TRANSACTION_NOT_SETTLEABLE');
+
+      // Never activate an entitlement from the internal record alone. Re-check the
+      // provider so a pending/failed transaction cannot be promoted by a stale or
+      // forged application-level request.
+      const gatewayStatus = await this.mercadoPagoPixProvider.getPaymentStatus(transactionId);
+      if (gatewayStatus.status !== 'approved') {
+        throw new Error(`MERCADOPAGO_PAYMENT_NOT_APPROVED:${gatewayStatus.status}`);
+      }
     }
 
     const now = new Date();
