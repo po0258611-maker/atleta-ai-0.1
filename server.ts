@@ -9,7 +9,7 @@ import { subscriptionRouter } from "./server/routes/subscriptionRoutes";
 import { databaseRouter } from "./server/routes/databaseRoutes";
 import { errorHandler } from "./server/middlewares/errorHandler";
 import { logger } from "./server/middlewares/logger";
-import { SERVER_CONFIG } from "./server/config/env";
+import { SERVER_CONFIG, validateProductionConfig } from "./server/config/env";
 import { getFirestoreAdapter } from "./server/repositories/firestoreAdapter";
 
 function applySecurityHeaders(app: express.Express) {
@@ -62,23 +62,15 @@ function applyCors(app: express.Express) {
   app.use((req, res, next) => {
     const origin = req.headers.origin;
 
-    if (!origin) {
-      return next();
-    }
+    if (!origin) return next();
 
     const host = req.headers.host;
     const isSameOrigin = Boolean(host && (origin === `http://${host}` || origin === `https://${host}`));
-    const isAllowed =
-      allowedOrigins.has("*") ||
-      allowedOrigins.has(origin) ||
-      isSameOrigin ||
-      isTrustedAiStudioOrigin(origin);
+    const isAllowed = allowedOrigins.has("*") || allowedOrigins.has(origin) || isSameOrigin || isTrustedAiStudioOrigin(origin);
 
     if (!isAllowed) {
       if (req.method === "OPTIONS") {
-        return res.status(403).json({
-          error: { code: "CORS_ORIGIN_DENIED", message: "Origem não autorizada." },
-        });
+        return res.status(403).json({ error: { code: "CORS_ORIGIN_DENIED", message: "Origem não autorizada." } });
       }
       return next();
     }
@@ -88,67 +80,45 @@ function applyCors(app: express.Express) {
     res.setHeader("Access-Control-Allow-Headers", "Authorization, Content-Type, X-Idempotency-Key");
     res.setHeader("Access-Control-Allow-Methods", "GET, POST, PUT, PATCH, DELETE, OPTIONS");
 
-    if (req.method === "OPTIONS") {
-      return res.status(204).end();
-    }
-
+    if (req.method === "OPTIONS") return res.status(204).end();
     return next();
   });
 }
 
 async function startServer() {
+  validateProductionConfig();
+
   const app = express();
   const PORT = SERVER_CONFIG.PORT;
   const isProduction = SERVER_CONFIG.NODE_ENV === "production";
 
-  if (SERVER_CONFIG.TRUST_PROXY) {
-    app.set("trust proxy", 1);
-  }
+  if (SERVER_CONFIG.TRUST_PROXY) app.set("trust proxy", 1);
 
   applySecurityHeaders(app);
   applyCors(app);
 
-  app.use(
-    express.json({
-      limit: "1mb",
-      strict: true,
-      verify: (req: any, _res, buf) => {
-        req.rawBody = buf.toString("utf8");
-      },
-    })
-  );
+  app.use(express.json({
+    limit: "1mb",
+    strict: true,
+    verify: (req: any, _res, buf) => { req.rawBody = buf.toString("utf8"); },
+  }));
   app.use(express.urlencoded({ extended: false, limit: "100kb" }));
 
   app.get("/api/health", (_req, res) => {
-    res.status(200).json({
-      status: "ok",
-      version: "2.1.0",
-      environment: SERVER_CONFIG.NODE_ENV,
-      timestamp: new Date().toISOString(),
-    });
+    res.status(200).json({ status: "ok", version: "2.1.0", environment: SERVER_CONFIG.NODE_ENV, timestamp: new Date().toISOString() });
   });
 
   app.get("/api/ready", (_req, res) => {
-    const isProd = SERVER_CONFIG.NODE_ENV === "production";
     const dbAdapter = getFirestoreAdapter();
     const hasDb = Boolean(dbAdapter);
-    const buildArtifactReady = !isProd || fs.existsSync(path.join(process.cwd(), "dist", "index.html"));
+    const buildArtifactReady = !isProduction || fs.existsSync(path.join(process.cwd(), "dist", "index.html"));
     const ready = hasDb && buildArtifactReady;
 
     if (!ready) {
-      return res.status(503).json({
-        status: "not_ready",
-        checks: { database: hasDb, buildArtifacts: buildArtifactReady },
-        timestamp: new Date().toISOString(),
-      });
+      return res.status(503).json({ status: "not_ready", checks: { database: hasDb, buildArtifacts: buildArtifactReady }, timestamp: new Date().toISOString() });
     }
 
-    return res.status(200).json({
-      status: "ready",
-      version: "2.1.0",
-      checks: { database: hasDb, buildArtifacts: buildArtifactReady },
-      timestamp: new Date().toISOString(),
-    });
+    return res.status(200).json({ status: "ready", version: "2.1.0", checks: { database: hasDb, buildArtifacts: buildArtifactReady }, timestamp: new Date().toISOString() });
   });
 
   app.use("/api/auth", authRouter);
@@ -156,15 +126,11 @@ async function startServer() {
   app.use("/api/subscriptions", subscriptionRouter);
   app.use("/api/database", databaseRouter);
   app.use("/api", aiRouter);
-
   app.use(errorHandler);
 
   if (!isProduction) {
     const { createServer: createViteServer } = await import("vite");
-    const vite = await createViteServer({
-      server: { middlewareMode: true },
-      appType: "spa",
-    });
+    const vite = await createViteServer({ server: { middlewareMode: true }, appType: "spa" });
     app.use(vite.middlewares);
   } else {
     const distPath = path.join(process.cwd(), "dist");
@@ -174,14 +140,10 @@ async function startServer() {
       throw new Error(`Artefato de produção não encontrado em ${indexPath}. Execute 'npm run build' primeiro.`);
     }
     app.use(express.static(distPath));
-    app.get("*", (_req, res) => {
-      res.sendFile(indexPath);
-    });
+    app.get("*", (_req, res) => res.sendFile(indexPath));
   }
 
-  app.listen(PORT, "0.0.0.0", () => {
-    logger.info(`ATLETA AI Server running on port ${PORT}`);
-  });
+  app.listen(PORT, "0.0.0.0", () => logger.info(`ATLETA AI Server running on port ${PORT}`));
 }
 
 startServer().catch((error) => {
