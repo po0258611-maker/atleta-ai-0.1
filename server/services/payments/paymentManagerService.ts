@@ -68,8 +68,8 @@ export class PaymentManagerService {
       // provider so a pending/failed transaction cannot be promoted by a stale or
       // forged application-level request.
       const gatewayStatus = await this.mercadoPagoPixProvider.getPaymentStatus(transactionId);
-      if (gatewayStatus.status !== 'approved') {
-        throw new Error(`MERCADOPAGO_PAYMENT_NOT_APPROVED:${gatewayStatus.status}`);
+      if (gatewayStatus !== 'approved') {
+        throw new Error(`MERCADOPAGO_PAYMENT_NOT_APPROVED:${gatewayStatus}`);
       }
     }
 
