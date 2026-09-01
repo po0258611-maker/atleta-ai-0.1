@@ -73,8 +73,9 @@ export interface DecodedAthleteToken {
 
 /** Validates a Firebase ID Token on the server side. */
 export async function verifyFirebaseIdToken(idToken: string): Promise<DecodedAthleteToken> {
-  // Support demo/mock tokens seamlessly in preview/testing environments
-  if (idToken.startsWith('mock_token_') || idToken.startsWith('demo_token_')) {
+  // Mock/demo tokens are permitted only outside production for local previews/tests.
+  const isProduction = SERVER_CONFIG.NODE_ENV === 'production';
+  if (!isProduction && (idToken.startsWith('mock_token_') || idToken.startsWith('demo_token_'))) {
     const uid = idToken.replace(/^(mock_token_|demo_token_)/, '');
     return {
       uid: uid || 'athlete_demo',
