@@ -27,23 +27,17 @@ type MercadoPagoPayment = {
 
 function mapStatus(status?: string): PaymentGatewayStatus {
   switch (status) {
-    case 'approved':
-      return 'approved';
+    case 'approved': return 'approved';
     case 'pending':
     case 'in_process':
-    case 'in_mediation':
-      return 'pending';
+    case 'in_mediation': return 'pending';
     case 'cancelled':
-    case 'canceled':
-      return 'canceled';
+    case 'canceled': return 'canceled';
     case 'refunded':
-    case 'charged_back':
-      return 'refunded';
+    case 'charged_back': return 'refunded';
     case 'rejected':
-    case 'charged_back_reversed':
-      return 'failed';
-    default:
-      return 'pending';
+    case 'charged_back_reversed': return 'failed';
+    default: return 'pending';
   }
 }
 
@@ -55,7 +49,6 @@ function assertConfigured(): void {
 
 async function mercadoPagoRequest<T>(path: string, init: RequestInit): Promise<T> {
   assertConfigured();
-
   const response = await fetch(`${MERCADO_PAGO_API}${path}`, {
     ...init,
     headers: {
@@ -68,11 +61,7 @@ async function mercadoPagoRequest<T>(path: string, init: RequestInit): Promise<T
 
   const text = await response.text();
   let body: unknown = null;
-  try {
-    body = text ? JSON.parse(text) : null;
-  } catch {
-    body = text;
-  }
+  try { body = text ? JSON.parse(text) : null; } catch { body = text; }
 
   if (!response.ok) {
     const detail = typeof body === 'object' && body !== null && 'message' in body
@@ -80,32 +69,23 @@ async function mercadoPagoRequest<T>(path: string, init: RequestInit): Promise<T
       : '';
     throw new Error(`MERCADOPAGO_API_ERROR:${response.status}:${detail || 'request_failed'}`);
   }
-
   return body as T;
 }
 
 export class MercadoPagoPixProvider implements PaymentProvider {
-  public providerName = 'mercadopago_pix';
+  public providerName = 'mercadopago';
 
   async createPayment(input: CreatePaymentInput): Promise<PaymentTransactionResult> {
-    if (input.paymentMethod !== 'pix') {
-      throw new Error('MERCADOPAGO_PIX_METHOD_REQUIRED');
-    }
-    if (!Number.isInteger(input.amountCents) || input.amountCents <= 0) {
-      throw new Error('INVALID_PAYMENT_AMOUNT');
-    }
-    if (!input.userEmail || !input.userEmail.includes('@')) {
-      throw new Error('INVALID_PAYER_EMAIL');
-    }
+    if (input.paymentMethod !== 'pix') throw new Error('MERCADOPAGO_PIX_METHOD_REQUIRED');
+    if (!Number.isInteger(input.amountCents) || input.amountCents <= 0) throw new Error('INVALID_PAYMENT_AMOUNT');
+    if (!input.userEmail || !input.userEmail.includes('@')) throw new Error('INVALID_PAYER_EMAIL');
 
     const externalReference = `athleta_ai:${input.userId}:${input.planSlug}:${input.idempotencyKey}`;
     const amount = Number((input.amountCents / 100).toFixed(2));
 
     const payment = await mercadoPagoRequest<MercadoPagoPayment>('/v1/payments', {
       method: 'POST',
-      headers: {
-        'X-Idempotency-Key': input.idempotencyKey,
-      },
+      headers: { 'X-Idempotency-Key': input.idempotencyKey },
       body: JSON.stringify({
         transaction_amount: amount,
         description: `ATHLETA AI - Plano ${input.planSlug}`,
@@ -125,10 +105,7 @@ export class MercadoPagoPixProvider implements PaymentProvider {
       }),
     });
 
-    if (!payment.id) {
-      throw new Error('MERCADOPAGO_PAYMENT_ID_MISSING');
-    }
-
+    if (!payment.id) throw new Error('MERCADOPAGO_PAYMENT_ID_MISSING');
     const transactionData = payment.point_of_interaction?.transaction_data;
     if (!transactionData?.qr_code || !transactionData.qr_code_base64) {
       throw new Error('MERCADOPAGO_PIX_DATA_MISSING');
@@ -136,9 +113,7 @@ export class MercadoPagoPixProvider implements PaymentProvider {
 
     const createdAt = new Date().toISOString();
     const expiresAt = payment.date_of_expiration || new Date(Date.now() + 30 * 60 * 1000).toISOString();
-    const qrCodeUrl = `data:image/png;base64,${transactionData.qr_code_base64}`;
-
-    const result: PaymentTransactionResult = {
+    return {
       transactionId: String(payment.id),
       provider: this.providerName,
       status: mapStatus(payment.status),
@@ -146,21 +121,16 @@ export class MercadoPagoPixProvider implements PaymentProvider {
       currency: payment.currency_id || 'BRL',
       paymentMethod: 'pix',
       copiaECola: transactionData.qr_code,
-      qrCodeUrl,
+      qrCodeUrl: `data:image/png;base64,${transactionData.qr_code_base64}`,
       expiresAt,
       idempotencyKey: input.idempotencyKey,
       createdAt,
     };
-
-    logger.info(`Mercado Pago PIX criado: ${payment.id} | R$ ${amount.toFixed(2)} | status=${payment.status || 'unknown'}`);
-    return result;
   }
 
   async getPaymentStatus(transactionId: string): Promise<PaymentGatewayStatus> {
     if (!transactionId || !/^\d+$/.test(transactionId)) return 'failed';
-    const payment = await mercadoPagoRequest<MercadoPagoPayment>(`/v1/payments/${encodeURIComponent(transactionId)}`, {
-      method: 'GET',
-    });
+    const payment = await mercadoPagoRequest<MercadoPagoPayment>(`/v1/payments/${encodeURIComponent(transactionId)}`, { method: 'GET' });
     return mapStatus(payment.status);
   }
 
@@ -181,12 +151,10 @@ export class MercadoPagoPixProvider implements PaymentProvider {
   async refundPayment(transactionId: string, amountCents?: number): Promise<boolean> {
     if (!transactionId || !/^\d+$/.test(transactionId)) return false;
     try {
-      const body = amountCents && amountCents > 0
-        ? { amount: Number((amountCents / 100).toFixed(2)) }
-        : undefined;
+      const body = amountCents && amountCents > 0 ? { amount: Number((amountCents / 100).toFixed(2)) } : undefined;
       await mercadoPagoRequest(`/v1/payments/${encodeURIComponent(transactionId)}/refunds`, {
         method: 'POST',
-        body: body ? JSON.stringify(body) : undefined,
+        ...(body ? { body: JSON.stringify(body) } : {}),
       });
       return true;
     } catch (error) {
