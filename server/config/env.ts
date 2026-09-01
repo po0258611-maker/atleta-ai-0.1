@@ -20,12 +20,9 @@ function resolveFirebaseProjectId(): string {
     const configPath = path.join(process.cwd(), 'firebase-applet-config.json');
     if (fs.existsSync(configPath)) {
       const parsed = JSON.parse(fs.readFileSync(configPath, 'utf8'));
-      if (parsed?.projectId && typeof parsed.projectId === 'string') {
-        return parsed.projectId.trim();
-      }
+      if (parsed?.projectId && typeof parsed.projectId === 'string') return parsed.projectId.trim();
     }
   } catch {}
-
   return process.env.FIREBASE_PROJECT_ID?.trim() || '';
 }
 
@@ -42,6 +39,7 @@ export const SERVER_CONFIG = {
   MERCADOPAGO_ACCESS_TOKEN: process.env.MERCADOPAGO_ACCESS_TOKEN?.trim() || '',
   MERCADOPAGO_ENV: (process.env.MERCADOPAGO_ENV?.trim() === 'production' ? 'production' : 'sandbox') as 'sandbox' | 'production',
   MERCADOPAGO_NOTIFICATION_URL: process.env.MERCADOPAGO_NOTIFICATION_URL?.trim() || '',
+  MERCADOPAGO_WEBHOOK_SECRET: process.env.MERCADOPAGO_WEBHOOK_SECRET?.trim() || '',
   STRIPE_WEBHOOK_SECRET: process.env.STRIPE_WEBHOOK_SECRET?.trim() || '',
   PIX_WEBHOOK_SECRET: process.env.PIX_WEBHOOK_SECRET?.trim() || '',
   TRUST_PROXY: process.env.TRUST_PROXY?.trim() === 'true',
@@ -60,19 +58,15 @@ export function validateProductionConfig(): void {
 
   if (SERVER_CONFIG.PAYMENT_MODE === 'live') {
     required.MERCADOPAGO_ACCESS_TOKEN = SERVER_CONFIG.MERCADOPAGO_ACCESS_TOKEN;
-    required.PIX_WEBHOOK_SECRET = SERVER_CONFIG.PIX_WEBHOOK_SECRET;
+    required.MERCADOPAGO_WEBHOOK_SECRET = SERVER_CONFIG.MERCADOPAGO_WEBHOOK_SECRET;
     required.MERCADOPAGO_NOTIFICATION_URL = SERVER_CONFIG.MERCADOPAGO_NOTIFICATION_URL;
+
+    if (SERVER_CONFIG.MERCADOPAGO_ENV !== 'production') {
+      throw new Error('MERCADOPAGO_ENV must be "production" when PAYMENT_MODE is "live" in production.');
+    }
   }
 
-  const missing = Object.entries(required)
-    .filter(([, value]) => !value)
-    .map(([key]) => key);
-
-  if (missing.length > 0) {
-    throw new Error(`Invalid production configuration. Missing: ${missing.join(', ')}`);
-  }
-
-  if (SERVER_CONFIG.PAYMENT_MODE !== 'live') {
-    throw new Error('PAYMENT_MODE must be "live" in production. Mock payment mode is forbidden.');
-  }
+  const missing = Object.entries(required).filter(([, value]) => !value).map(([key]) => key);
+  if (missing.length > 0) throw new Error(`Invalid production configuration. Missing: ${missing.join(', ')}`);
+  if (SERVER_CONFIG.PAYMENT_MODE !== 'live') throw new Error('PAYMENT_MODE must be "live" in production. Mock payment mode is forbidden.');
 }
