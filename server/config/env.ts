@@ -46,10 +46,36 @@ export const SERVER_CONFIG = {
   PAYMENT_MODE: paymentMode,
   MERCADOPAGO_ACCESS_TOKEN: process.env.MERCADOPAGO_ACCESS_TOKEN?.trim() || '',
   MERCADOPAGO_ENV: (process.env.MERCADOPAGO_ENV?.trim() === 'production' ? 'production' : 'sandbox') as 'sandbox' | 'production',
-  STRIPE_WEBHOOK_SECRET: process.env.STRIPE_WEBHOOK_SECRET?.trim() || 'whsec_test_stripe_secret_key_athleta_ai_2026',
-  PIX_WEBHOOK_SECRET: process.env.PIX_WEBHOOK_SECRET?.trim() || 'pix_whsec_test_secret_athleta_ai_2026',
+  STRIPE_WEBHOOK_SECRET: process.env.STRIPE_WEBHOOK_SECRET?.trim() || '',
+  PIX_WEBHOOK_SECRET: process.env.PIX_WEBHOOK_SECRET?.trim() || '',
   TRUST_PROXY: process.env.TRUST_PROXY?.trim() === 'true',
   RATE_LIMIT_WINDOW_MS: 60 * 1000,
   RATE_LIMIT_MAX_REQUESTS: Math.max(1, Number(process.env.RATE_LIMIT_MAX_REQUESTS) || 300),
   MAX_PROMPT_LENGTH: Math.max(100, Number(process.env.MAX_PROMPT_LENGTH) || 4000),
 };
+
+export function validateProductionConfig(): void {
+  if (!isProduction) return;
+
+  const required: Record<string, string> = {
+    PAYMENT_MODE: SERVER_CONFIG.PAYMENT_MODE,
+    FIREBASE_PROJECT_ID: SERVER_CONFIG.FIREBASE_PROJECT_ID,
+  };
+
+  if (SERVER_CONFIG.PAYMENT_MODE === 'live') {
+    required.MERCADOPAGO_ACCESS_TOKEN = SERVER_CONFIG.MERCADOPAGO_ACCESS_TOKEN;
+    required.PIX_WEBHOOK_SECRET = SERVER_CONFIG.PIX_WEBHOOK_SECRET;
+  }
+
+  const missing = Object.entries(required)
+    .filter(([, value]) => !value)
+    .map(([key]) => key);
+
+  if (missing.length > 0) {
+    throw new Error(`Invalid production configuration. Missing: ${missing.join(', ')}`);
+  }
+
+  if (SERVER_CONFIG.PAYMENT_MODE !== 'live') {
+    throw new Error('PAYMENT_MODE must be "live" in production. Mock payment mode is forbidden.');
+  }
+}
