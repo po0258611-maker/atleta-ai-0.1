@@ -15,7 +15,7 @@ type MercadoPagoPayment = {
 };
 
 const API_URL = 'https://api.mercadopago.com';
-const MAX_TIMESTAMP_SKEW_SECONDS = 5 * 60;
+const MAX_TIMESTAMP_SKEW_MS = 5 * 60 * 1000;
 
 function parseSignature(signature: string): { ts?: string; v1?: string } {
   const result: { ts?: string; v1?: string } = {};
@@ -40,10 +40,14 @@ export function verifyMercadoPagoWebhookSignature(
   if (!dataId || !requestId || !secret) return false;
   const parsed = parseSignature(signature);
   if (!parsed.ts || !parsed.v1 || !/^\d+$/.test(parsed.ts)) return false;
-  const tsSeconds = Number(parsed.ts);
-  if (!Number.isSafeInteger(tsSeconds)) return false;
-  const nowSeconds = Math.floor(Date.now() / 1000);
-  if (Math.abs(nowSeconds - tsSeconds) > MAX_TIMESTAMP_SKEW_SECONDS) return false;
+
+  const timestampValue = Number(parsed.ts);
+  if (!Number.isSafeInteger(timestampValue)) return false;
+  // Mercado Pago sends ts in milliseconds. Accept seconds as a defensive compatibility measure.
+  const timestampMs = parsed.ts.length >= 13 ? timestampValue : timestampValue * 1000;
+  if (!Number.isSafeInteger(timestampMs)) return false;
+  if (Math.abs(Date.now() - timestampMs) > MAX_TIMESTAMP_SKEW_MS) return false;
+
   const manifest = `id:${dataId};request-id:${requestId};ts:${parsed.ts};`;
   const digest = crypto.createHmac('sha256', secret).update(manifest, 'utf8').digest('hex');
   return safeEqualHex(digest, parsed.v1);
