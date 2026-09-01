@@ -26,12 +26,7 @@ function resolveFirebaseProjectId(): string {
     }
   } catch {}
 
-  const envProjectId = process.env.FIREBASE_PROJECT_ID?.trim();
-  if (envProjectId && envProjectId !== 'localhost' && envProjectId !== 'storied-cable-xn50x') {
-    return envProjectId;
-  }
-
-  return 'gen-lang-client-0402109874';
+  return process.env.FIREBASE_PROJECT_ID?.trim() || '';
 }
 
 export const SERVER_CONFIG = {
