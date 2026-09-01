@@ -5,20 +5,32 @@ import {
   PaymentGatewayStatus,
 } from './paymentProvider.interface';
 import { PixPaymentProvider } from './pixPaymentProvider';
+import { MercadoPagoPixProvider } from './mercadoPagoPixProvider';
 import { StripeGatewayProvider } from './stripePaymentProvider';
 import { subscriptionServerRepository } from '../../repositories/subscriptionServerRepository';
 import { logger } from '../../middlewares/logger';
 import { getPaidPlan } from '../../config/plans';
+import { SERVER_CONFIG } from '../../config/env';
 
 export class PaymentManagerService {
-  private pixProvider = new PixPaymentProvider();
+  private pixMockProvider = new PixPaymentProvider();
+  private mercadoPagoPixProvider = new MercadoPagoPixProvider();
   private stripeProvider = new StripeGatewayProvider();
 
   getProvider(method: string): PaymentProvider {
     switch (method) {
       case 'pix':
+      case 'mercadopago':
+      case 'mercadopago_pix':
+        // In live mode PIX is always processed by Mercado Pago.
+        // The local provider remains available only for non-production tests.
+        if (SERVER_CONFIG.PAYMENT_MODE === 'live') return this.mercadoPagoPixProvider;
+        return this.pixMockProvider;
       case 'pix_direct':
-        return this.pixProvider;
+        if (SERVER_CONFIG.PAYMENT_MODE === 'live') {
+          throw new Error('PIX_DIRECT_FORBIDDEN_IN_LIVE_MODE');
+        }
+        return this.pixMockProvider;
       case 'credit_card':
       case 'stripe':
         return this.stripeProvider;
