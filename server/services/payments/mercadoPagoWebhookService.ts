@@ -2,6 +2,7 @@ import crypto from 'crypto';
 import { SERVER_CONFIG } from '../../config/env';
 import { getPaidPlan } from '../../config/plans';
 import { paymentManagerService } from './paymentManagerService';
+import { paymentTransactionRepository } from '../../repositories/paymentTransactionRepository';
 import { subscriptionServerRepository } from '../../repositories/subscriptionServerRepository';
 import { logger } from '../../middlewares/logger';
 
@@ -40,14 +41,10 @@ export function verifyMercadoPagoWebhookSignature(
   if (!dataId || !requestId || !secret) return false;
   const parsed = parseSignature(signature);
   if (!parsed.ts || !parsed.v1 || !/^\d+$/.test(parsed.ts)) return false;
-
   const timestampValue = Number(parsed.ts);
   if (!Number.isSafeInteger(timestampValue)) return false;
-  // Mercado Pago sends ts in milliseconds. Accept seconds as a defensive compatibility measure.
   const timestampMs = parsed.ts.length >= 13 ? timestampValue : timestampValue * 1000;
-  if (!Number.isSafeInteger(timestampMs)) return false;
-  if (Math.abs(Date.now() - timestampMs) > MAX_TIMESTAMP_SKEW_MS) return false;
-
+  if (!Number.isSafeInteger(timestampMs) || Math.abs(Date.now() - timestampMs) > MAX_TIMESTAMP_SKEW_MS) return false;
   const manifest = `id:${dataId};request-id:${requestId};ts:${parsed.ts};`;
   const digest = crypto.createHmac('sha256', secret).update(manifest, 'utf8').digest('hex');
   return safeEqualHex(digest, parsed.v1);
@@ -87,10 +84,21 @@ export class MercadoPagoWebhookService {
       if (!reference) throw new Error('MERCADOPAGO_EXTERNAL_REFERENCE_INVALID');
       const plan = getPaidPlan(reference.planSlug);
       if (!plan) throw new Error('INVALID_PLAN');
+
+      const transaction = await paymentTransactionRepository.findByTransactionId(input.paymentId);
+      if (!transaction) throw new Error('MERCADOPAGO_TRANSACTION_NOT_FOUND');
+      if (transaction.provider !== 'mercadopago') throw new Error('MERCADOPAGO_PROVIDER_MISMATCH');
+      if (transaction.userId !== reference.userId) throw new Error('MERCADOPAGO_USER_MISMATCH');
+      if (transaction.planSlug !== reference.planSlug) throw new Error('MERCADOPAGO_PLAN_MISMATCH');
+      if (transaction.idempotencyKey !== reference.idempotencyKey) throw new Error('MERCADOPAGO_IDEMPOTENCY_MISMATCH');
+      if (transaction.amountCents !== plan.amountCents || transaction.currency !== 'BRL') throw new Error('MERCADOPAGO_TRANSACTION_AMOUNT_MISMATCH');
+
       const expectedAmount = Number((plan.amountCents / 100).toFixed(2));
       if (payment.currency_id !== 'BRL' || payment.transaction_amount !== expectedAmount) throw new Error('MERCADOPAGO_AMOUNT_MISMATCH');
 
       if (payment.status !== 'approved') {
+        const mappedStatus = payment.status === 'cancelled' || payment.status === 'canceled' ? 'canceled' : payment.status === 'rejected' ? 'failed' : 'pending';
+        await paymentTransactionRepository.updateStatus(input.paymentId, mappedStatus, payment.status || 'unknown');
         await subscriptionServerRepository.markWebhookCompleted('mercadopago', input.eventId, input.eventType, 'ignored', { paymentId: input.paymentId, paymentStatus: payment.status || 'unknown' });
         return { processed: true, reason: `PAYMENT_NOT_APPROVED:${payment.status || 'unknown'}` };
       }
