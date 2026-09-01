@@ -41,6 +41,7 @@ export const SERVER_CONFIG = {
   PAYMENT_MODE: paymentMode,
   MERCADOPAGO_ACCESS_TOKEN: process.env.MERCADOPAGO_ACCESS_TOKEN?.trim() || '',
   MERCADOPAGO_ENV: (process.env.MERCADOPAGO_ENV?.trim() === 'production' ? 'production' : 'sandbox') as 'sandbox' | 'production',
+  MERCADOPAGO_NOTIFICATION_URL: process.env.MERCADOPAGO_NOTIFICATION_URL?.trim() || '',
   STRIPE_WEBHOOK_SECRET: process.env.STRIPE_WEBHOOK_SECRET?.trim() || '',
   PIX_WEBHOOK_SECRET: process.env.PIX_WEBHOOK_SECRET?.trim() || '',
   TRUST_PROXY: process.env.TRUST_PROXY?.trim() === 'true',
@@ -60,6 +61,7 @@ export function validateProductionConfig(): void {
   if (SERVER_CONFIG.PAYMENT_MODE === 'live') {
     required.MERCADOPAGO_ACCESS_TOKEN = SERVER_CONFIG.MERCADOPAGO_ACCESS_TOKEN;
     required.PIX_WEBHOOK_SECRET = SERVER_CONFIG.PIX_WEBHOOK_SECRET;
+    required.MERCADOPAGO_NOTIFICATION_URL = SERVER_CONFIG.MERCADOPAGO_NOTIFICATION_URL;
   }
 
   const missing = Object.entries(required)
