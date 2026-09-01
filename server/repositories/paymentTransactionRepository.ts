@@ -17,6 +17,8 @@ export type PaymentTransactionRecord = {
   updatedAt: string;
   expiresAt?: string;
   providerStatus?: string;
+  qrCode?: string;
+  qrCodeUrl?: string;
 };
 
 export class PaymentTransactionRepository {
@@ -37,8 +39,7 @@ export class PaymentTransactionRepository {
 
   async save(record: PaymentTransactionRecord): Promise<PaymentTransactionRecord> {
     try {
-      const now = new Date().toISOString();
-      const updated = { ...record, updatedAt: now };
+      const updated = { ...record, updatedAt: new Date().toISOString() };
       await this.col.doc(record.transactionId).set(updated, { merge: true });
       return updated;
     } catch (error: any) {
