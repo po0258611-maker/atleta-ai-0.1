@@ -26,12 +26,7 @@ function resolveFirebaseProjectId(): string {
     }
   } catch {}
 
-  const envProjectId = process.env.FIREBASE_PROJECT_ID?.trim();
-  if (envProjectId && envProjectId !== 'localhost' && envProjectId !== 'storied-cable-xn50x') {
-    return envProjectId;
-  }
-
-  return 'gen-lang-client-0402109874';
+  return process.env.FIREBASE_PROJECT_ID?.trim() || '';
 }
 
 export const SERVER_CONFIG = {
@@ -46,10 +41,34 @@ export const SERVER_CONFIG = {
   PAYMENT_MODE: paymentMode,
   MERCADOPAGO_ACCESS_TOKEN: process.env.MERCADOPAGO_ACCESS_TOKEN?.trim() || '',
   MERCADOPAGO_ENV: (process.env.MERCADOPAGO_ENV?.trim() === 'production' ? 'production' : 'sandbox') as 'sandbox' | 'production',
-  STRIPE_WEBHOOK_SECRET: process.env.STRIPE_WEBHOOK_SECRET?.trim() || 'whsec_test_stripe_secret_key_athleta_ai_2026',
-  PIX_WEBHOOK_SECRET: process.env.PIX_WEBHOOK_SECRET?.trim() || 'pix_whsec_test_secret_athleta_ai_2026',
+  STRIPE_WEBHOOK_SECRET: process.env.STRIPE_WEBHOOK_SECRET?.trim() || '',
+  PIX_WEBHOOK_SECRET: process.env.PIX_WEBHOOK_SECRET?.trim() || '',
   TRUST_PROXY: process.env.TRUST_PROXY?.trim() === 'true',
   RATE_LIMIT_WINDOW_MS: 60 * 1000,
   RATE_LIMIT_MAX_REQUESTS: Math.max(1, Number(process.env.RATE_LIMIT_MAX_REQUESTS) || 300),
   MAX_PROMPT_LENGTH: Math.max(100, Number(process.env.MAX_PROMPT_LENGTH) || 4000),
 };
+
+export function validateProductionConfig(): void {
+  if (!isProduction) return;
+
+  if (!SERVER_CONFIG.FIREBASE_PROJECT_ID) {
+    throw new Error('FIREBASE_PROJECT_ID is required in production.');
+  }
+
+  if (SERVER_CONFIG.PAYMENT_MODE !== 'live') {
+    throw new Error('PAYMENT_MODE=live is required in production. Mock payment providers are disabled for safety.');
+  }
+
+  if (!SERVER_CONFIG.MERCADOPAGO_ACCESS_TOKEN) {
+    throw new Error('MERCADOPAGO_ACCESS_TOKEN is required in production when Mercado Pago is the payment provider.');
+  }
+
+  if (!SERVER_CONFIG.PIX_WEBHOOK_SECRET) {
+    throw new Error('PIX_WEBHOOK_SECRET is required in production.');
+  }
+
+  if (SERVER_CONFIG.MAX_PROMPT_LENGTH < 100) {
+    throw new Error('MAX_PROMPT_LENGTH must be at least 100 characters.');
+  }
+}
