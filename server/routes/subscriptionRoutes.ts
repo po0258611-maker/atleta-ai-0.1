@@ -8,11 +8,15 @@ import {
   handleReactivateSubscription,
   handleChangePlan,
 } from '../controllers/subscriptionController';
+import { handleMercadoPagoWebhook } from '../controllers/mercadoPagoWebhookController';
 import { requireAuth } from '../middlewares/auth';
 
 export const subscriptionRouter = Router();
 
-// Webhook endpoint (Processed via cryptographic verification & idempotency)
+// Mercado Pago webhook: public endpoint authenticated exclusively by MP x-signature HMAC.
+subscriptionRouter.post('/webhooks/mercadopago', handleMercadoPagoWebhook);
+
+// Other provider webhooks (legacy/generic path).
 subscriptionRouter.post('/webhooks/:provider', handlePaymentWebhook);
 
 // Payment Intents & Orders (Requires Firebase Auth Bearer Token)
@@ -24,4 +28,3 @@ subscriptionRouter.get('/history', requireAuth, handleGetSubscriptionHistory);
 subscriptionRouter.post('/cancel', requireAuth, handleCancelSubscription);
 subscriptionRouter.post('/reactivate', requireAuth, handleReactivateSubscription);
 subscriptionRouter.post('/change-plan', requireAuth, handleChangePlan);
-
