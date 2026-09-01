@@ -1,74 +1,69 @@
 import { Router, Request, Response } from 'express';
 import { createClient } from '@supabase/supabase-js';
 import { SERVER_CONFIG } from '../config/env';
+import { requireAuth } from '../middlewares/auth';
 
 export const databaseRouter = Router();
 
-function sanitizeSupabaseUrl(rawUrl?: string): string {
-  const trimmed = (rawUrl || '').trim();
-  if (!trimmed) {
-    return 'https://ivnxxXsZ7nIkhSmjl8t2A.supabase.co';
-  }
-  if (!trimmed.startsWith('http://') && !trimmed.startsWith('https://')) {
-    return `https://${trimmed}`;
-  }
-  return trimmed;
-}
+function getSupabaseConfig() {
+  const url = (process.env.SUPABASE_URL || '').trim();
+  const key = (process.env.SUPABASE_ANON_KEY || '').trim();
 
-const SUPABASE_URL = sanitizeSupabaseUrl(process.env.SUPABASE_URL);
-const SUPABASE_KEY = (process.env.SUPABASE_ANON_KEY || '').trim() || 'sb_publishable_1ivnxxXsZ7nIkhSmjl8t2A_tvWn9LeJ';
+  if (!url || !key) return null;
+  if (!/^https:\/\/[^\s/]+(?:\/[^\s]*)?$/.test(url)) return null;
+
+  return { url, key };
+}
 
 function getSupabaseServer() {
-  return createClient(SUPABASE_URL, SUPABASE_KEY);
+  const config = getSupabaseConfig();
+  if (!config) throw new Error('Supabase não configurado no ambiente do servidor.');
+  return createClient(config.url, config.key);
 }
 
-// 1. Database Connectivity & Health Status
+// 1. Database configuration & health status.
+// Keep this endpoint intentionally low-detail because it may be used by deployment probes.
 databaseRouter.get('/status', async (_req: Request, res: Response) => {
   const startTime = Date.now();
-  try {
-    const client = getSupabaseServer();
-    const { error } = await client.auth.getSession();
-    const latency = Date.now() - startTime;
+  const supabaseConfig = getSupabaseConfig();
 
-    return res.status(200).json({
+  try {
+    // A configured Supabase client is not the same thing as a proven database connection.
+    // Avoid reporting synthetic "online" values when no real health query is available.
+    let supabaseStatus: 'configured' | 'not_configured' = supabaseConfig ? 'configured' : 'not_configured';
+
+    if (supabaseConfig) {
+      const client = getSupabaseServer();
+      await client.auth.getSession();
+      supabaseStatus = 'configured';
+    }
+
+    return res.status(supabaseConfig ? 200 : 503).json({
       providers: {
         supabase: {
-          name: 'Supabase PostgreSQL & Auth',
-          connected: !error,
-          url: SUPABASE_URL,
-          publishableKeyMasked: `${SUPABASE_KEY.slice(0, 14)}...${SUPABASE_KEY.slice(-6)}`,
-          status: error ? 'error' : 'online',
-          message: error ? error.message : 'Conexão Supabase operacional',
-          latencyMs: latency,
+          configured: supabaseStatus === 'configured',
+          status: supabaseStatus,
+          latencyMs: Date.now() - startTime,
         },
         firestore: {
-          name: 'Firebase Firestore & Auth',
-          connected: true,
-          projectId: SERVER_CONFIG.FIREBASE_PROJECT_ID,
-          status: 'online',
-          latencyMs: Math.max(12, Math.floor(latency * 0.8)),
-          features: ['Real-time Synchronization', 'Offline Persistence', 'Subcollections RBAC']
+          configured: Boolean(SERVER_CONFIG.FIREBASE_PROJECT_ID),
+          status: SERVER_CONFIG.FIREBASE_PROJECT_ID ? 'configured' : 'not_configured',
         },
-        localCache: {
-          name: 'IndexedDB & Encrypted Local Store',
-          status: 'online',
-          latencyMs: 1,
-        }
       },
       timestamp: new Date().toISOString(),
     });
   } catch (err: unknown) {
-    const errorMsg = err instanceof Error ? err.message : 'Erro interno';
-    return res.status(500).json({
+    return res.status(503).json({
       success: false,
-      error: errorMsg,
+      error: 'Serviço de banco de dados indisponível ou não configurado.',
       timestamp: new Date().toISOString(),
     });
   }
 });
 
-// 2. Real-time Ping Latency Benchmark
-databaseRouter.get('/ping', async (_req: Request, res: Response) => {
+// 2. Real-time Ping Latency Benchmark.
+// Requires authentication and never reports a successful ping after an exception.
+databaseRouter.get('/ping', requireAuth, async (_req: Request, res: Response) => {
   const start = Date.now();
   try {
     const client = getSupabaseServer();
@@ -81,18 +76,18 @@ databaseRouter.get('/ping', async (_req: Request, res: Response) => {
       timestamp: new Date().toISOString(),
     });
   } catch {
-    const fallbackRoundtrip = Date.now() - start;
-    return res.json({
-      success: true,
-      roundtripMs: fallbackRoundtrip,
-      status: 'fair',
+    return res.status(503).json({
+      success: false,
+      code: 'DATABASE_UNAVAILABLE',
+      message: 'Serviço Supabase não está configurado ou disponível.',
       timestamp: new Date().toISOString(),
     });
   }
 });
 
-// 3. Database Schema Dictionary & Metadata
-databaseRouter.get('/schema', (_req: Request, res: Response) => {
+// 3. Database Schema Dictionary & Metadata.
+// Internal architecture metadata must not be publicly enumerable.
+databaseRouter.get('/schema', requireAuth, (_req: Request, res: Response) => {
   res.json({
     version: '2.5.0',
     engine: 'Hybrid Firestore + Supabase PostgreSQL',
@@ -156,8 +151,9 @@ databaseRouter.get('/schema', (_req: Request, res: Response) => {
   });
 });
 
-// 4. Data Audit & Integrity Inspector
-databaseRouter.post('/integrity-check', (req: Request, res: Response) => {
+// 4. Data Audit & Integrity Inspector.
+// The endpoint validates the submitted payload only; it does not persist or mutate data.
+databaseRouter.post('/integrity-check', requireAuth, (req: Request, res: Response) => {
   const { logs, profile, measurements } = req.body || {};
 
   const issues: { level: 'info' | 'warning' | 'error'; message: string; field?: string }[] = [];
@@ -165,10 +161,10 @@ databaseRouter.post('/integrity-check', (req: Request, res: Response) => {
 
   if (profile) {
     checkedRecordsCount++;
-    if (!profile.name || profile.name.trim().length === 0) {
+    if (typeof profile.name !== 'string' || profile.name.trim().length === 0) {
       issues.push({ level: 'warning', message: 'Nome do atleta não preenchido no perfil.', field: 'name' });
     }
-    if (profile.weight && (profile.weight < 30 || profile.weight > 300)) {
+    if (typeof profile.weight === 'number' && (profile.weight < 30 || profile.weight > 300)) {
       issues.push({ level: 'warning', message: `Peso informado (${profile.weight} kg) fora da faixa biométrica usual.`, field: 'weight' });
     }
   }
@@ -183,10 +179,10 @@ databaseRouter.post('/integrity-check', (req: Request, res: Response) => {
         issues.push({ level: 'warning', message: `Log #${idx + 1} (${log.exerciseName || 'Desconhecido'}) sem séries computadas.` });
       } else {
         log.sets.forEach((set: any, sIdx: number) => {
-          if (set.reps <= 0) {
+          if (typeof set.reps !== 'number' || set.reps <= 0) {
             issues.push({ level: 'warning', message: `Log #${idx + 1}, Série ${sIdx + 1}: contagem de repetições menor ou igual a zero.` });
           }
-          if (set.weight < 0) {
+          if (typeof set.weight === 'number' && set.weight < 0) {
             issues.push({ level: 'error', message: `Log #${idx + 1}, Série ${sIdx + 1}: carga negativa detectada (${set.weight} kg).` });
           }
         });
