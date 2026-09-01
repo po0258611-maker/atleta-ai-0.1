@@ -1,19 +1,16 @@
 {
   "name": "atleta-ai",
   "private": true,
-  "version": "2.6.0",
+  "version": "0.3.0",
   "type": "module",
-  "engines": {
-    "node": ">=22.0.0"
-  },
   "scripts": {
-    "dev": "NODE_ENV=development tsx server.ts",
-    "build": "npm run clean && vite build && esbuild server.ts --bundle --platform=node --format=cjs --packages=external --sourcemap --outfile=server-dist/server.cjs",
-    "start": "npm run build && NODE_ENV=production node server-dist/server.cjs",
-    "preview": "npm run build && NODE_ENV=production node server-dist/server.cjs",
-    "clean": "rm -rf dist server-dist",
+    "dev": "tsx server.ts",
+    "build": "vite build && esbuild server.ts --bundle --platform=node --format=cjs --packages=external --sourcemap --outfile=dist/server.cjs",
+    "start": "node dist/server.cjs",
+    "preview": "vite preview",
+    "clean": "rm -rf dist server.cjs",
     "lint": "tsc --noEmit",
-    "test": "tsx src/engine/tests/workoutEngine.test.ts && tsx src/engine/tests/progressionEngine.test.ts && tsx src/engine/tests/oneRepMax.test.ts && tsx src/engine/tests/bodyComposition.test.ts && tsx src/engine/tests/fatigueEngine.test.ts && tsx src/engine/tests/bioAtlas.test.ts && tsx src/engine/tests/aiArchitecture.test.ts && tsx src/engine/tests/safetyAndNutrition.test.ts && tsx server/tests/firestorePersistence.test.ts && tsx server/tests/atomicQuotaConcurrency.test.ts && tsx server/tests/webhookSecurity.test.ts && tsx server/tests/rbac.test.ts && tsx server/tests/subscription.test.ts && tsx server/tests/entitlementEngine.test.ts && tsx server/tests/paymentProvider.test.ts && tsx server/tests/supabaseDatabase.test.ts && tsx server/tests/rateLimitDiagnostic.test.ts && tsx server/tests/comprehensiveSystem.test.ts"
+    "test": "tsx src/engine/tests/workoutEngine.test.ts && tsx src/engine/tests/progressionEngine.test.ts && tsx src/engine/tests/oneRepMax.test.ts && tsx src/engine/tests/bodyComposition.test.ts && tsx src/engine/tests/fatigueEngine.test.ts && tsx src/engine/tests/bioAtlas.test.ts && tsx src/engine/tests/aiArchitecture.test.ts && tsx src/engine/tests/aiPrescriptionAudit.test.ts && tsx server/tests/firestorePersistence.test.ts && tsx server/tests/atomicQuotaConcurrency.test.ts && tsx server/tests/webhookSecurity.test.ts && tsx server/tests/rbac.test.ts && tsx server/tests/subscription.test.ts && tsx server/tests/entitlementEngine.test.ts && tsx server/tests/paymentProvider.test.ts && tsx server/tests/supabaseDatabase.test.ts && tsx server/tests/rateLimitDiagnostic.test.ts && tsx server/tests/comprehensiveSystem.test.ts"
   },
   "dependencies": {
     "@google/genai": "^2.4.0",

@@ -184,3 +184,80 @@ export interface FatigueAssessment {
   sleepFactor: number;
   recommendedAction: string;
 }
+
+export interface AthleteContext {
+  atleta: {
+    nome: string;
+    genero: Gender;
+    idade: number;
+    pesoKg: number;
+    alturaCm: number;
+    experiencia: ExperienceLevel;
+    diasDisponiveis: number;
+    tempoPorSessaoMin: number;
+    objetivo: WorkoutGoal;
+    ambiente: GymEnvironment;
+    prioridades: MuscleGroup[];
+    limitacoesFisicas: string[];
+    exerciciosProibidos: string[];
+    horasSono: number;
+    nivelEstresse: 'low' | 'moderate' | 'high';
+  };
+  programaPeriodizado?: {
+    id: string;
+    metodologia: string;
+    diasTotais: number;
+    distribuicao: {
+      dia: string;
+      titulo: string;
+      foco: MuscleGroup[];
+      tempoMin: number;
+      exerciciosPrescritos: {
+        exercicio: string;
+        padraoMotor: string;
+        grupoMuscular: string;
+        series: number;
+        reps: string;
+        rir: number;
+        rpe: number;
+        descansoSec: number;
+        cadencia: string;
+      }[];
+    }[];
+    volumeSemanalPorGrupo: Record<MuscleGroup, number>;
+  };
+  fadigaERecuperacao?: {
+    scoreFadiga: number;
+    status: 'optimal' | 'moderate' | 'high_fatigue' | 'deload_recommended';
+    nivelDeload: string;
+    driversPrincipais: string[];
+    rpeMedioRecente: number;
+    totalSeriesRecentes: number;
+    tendenciaDesempenho: 'improving' | 'stable' | 'regressing';
+    orientacaoAcao: string;
+    alertaDorOuLimitacao?: string;
+  };
+  metasEComposicaoCorporal?: {
+    metaPesoKg: number;
+    semanasEstimadas: number;
+    caloriasDiariasRecomendadas: number;
+    macrosG: {
+      proteinas: number;
+      carboidratos: number;
+      gorduras: number;
+    };
+    focoTreino: string;
+  };
+  progressaoEHistoricoRecente?: {
+    totalSessoesRegistradas: number;
+    diasConsecutivosTreinados: number;
+    estimativa1RM: {
+      agachamento?: number;
+      supino?: number;
+      terra?: number;
+      desenvolvimento?: number;
+    };
+    statusPeriodizacao: string;
+    necessitaDeload: boolean;
+  };
+}

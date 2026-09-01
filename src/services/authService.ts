@@ -2,6 +2,11 @@ import { UserProfile } from '../types';
 import {
   AuthenticatedAthlete,
   signInWithGoogle as firebaseSignInWithGoogle,
+  signInWithEmailPassword as firebaseSignInWithEmail,
+  registerWithEmailPassword as firebaseRegisterWithEmail,
+  sendCurrentUserEmailVerification,
+  sendPasswordReset,
+  createGuestAthlete,
   signOutFromFirebase as firebaseSignOut,
   subscribeToAuthState,
   AuthState,
@@ -13,51 +18,53 @@ export interface UserAccount {
   email: string;
   avatarUrl?: string;
   createdAt: string;
-  emailVerified?: boolean;
+  emailVerified: boolean;
   profile: UserProfile;
 }
 
 export type { AuthState, AuthenticatedAthlete };
 
-export const convertAthleteToUserAccount = (athlete: AuthenticatedAthlete): UserAccount => {
-  return {
-    id: athlete.uid,
-    name: athlete.displayName,
-    email: athlete.email,
-    avatarUrl: athlete.photoURL,
-    createdAt: new Date().toISOString(),
-    emailVerified: athlete.emailVerified,
-    profile: athlete.profile,
-  };
+export const convertAthleteToUserAccount = (athlete: AuthenticatedAthlete): UserAccount => ({
+  id: athlete.uid,
+  name: athlete.displayName,
+  email: athlete.email,
+  avatarUrl: athlete.photoURL,
+  createdAt: athlete.createdAt || new Date().toISOString(),
+  emailVerified: athlete.emailVerified,
+  profile: athlete.profile,
+});
+
+export const loginWithGoogleAccount = async (): Promise<UserAccount> =>
+  convertAthleteToUserAccount(await firebaseSignInWithGoogle());
+
+export const loginWithEmailAccount = async (email: string, pass: string): Promise<UserAccount> =>
+  convertAthleteToUserAccount(await firebaseSignInWithEmail(email, pass));
+
+export const registerWithEmailAccount = async (email: string, pass: string): Promise<UserAccount> =>
+  convertAthleteToUserAccount(await firebaseRegisterWithEmail(email, pass));
+
+export const sendVerificationEmail = async (): Promise<void> => {
+  await sendCurrentUserEmailVerification();
 };
 
-/**
- * Real Firebase Google Sign-In
- */
-export const loginWithGoogleAccount = async (): Promise<UserAccount> => {
-  const athlete = await firebaseSignInWithGoogle();
-  return convertAthleteToUserAccount(athlete);
+export const resetPassword = async (email: string): Promise<void> => {
+  await sendPasswordReset(email);
 };
 
-/**
- * Real Firebase Sign-Out
- */
+export const loginAsGuestAccount = (name = 'Atleta Convidado'): UserAccount =>
+  convertAthleteToUserAccount(createGuestAthlete(name));
+
 export const logoutUserAccount = async (): Promise<void> => {
   await firebaseSignOut();
 };
 
-/**
- * Update active athlete profile in-memory
- */
 export const updateUserAccountProfile = (
   currentUser: UserAccount,
   updatedProfile: UserProfile
-): UserAccount => {
-  return {
-    ...currentUser,
-    name: updatedProfile.name,
-    profile: updatedProfile,
-  };
-};
+): UserAccount => ({
+  ...currentUser,
+  name: updatedProfile.name,
+  profile: updatedProfile,
+});
 
 export { subscribeToAuthState };

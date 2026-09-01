@@ -1,5 +1,5 @@
 import React, { useState, useRef, useEffect, useMemo } from 'react';
-import { UserProfile, FullBodyProgram, SubscriptionState } from '../types';
+import { UserProfile, FullBodyProgram, SubscriptionState, WorkoutLog } from '../types';
 import { askAICoach } from '../engine/aiCoachEngine';
 import { FeaturePermissions, PermissionService } from '../services/permissionService';
 import { ProgressionEngine, IntelligentGoalTarget } from '../services/progressionEngine';
@@ -24,6 +24,7 @@ import {
 interface AICoachViewProps {
   profile: UserProfile;
   program: FullBodyProgram | null;
+  workoutLogs?: WorkoutLog[];
   subscription?: SubscriptionState;
   onOpenSubscriptionModal?: () => void;
   onOpenAIImitationModal?: () => void;
@@ -40,6 +41,7 @@ interface ChatMessage {
 export const AICoachView: React.FC<AICoachViewProps> = ({
   profile,
   program,
+  workoutLogs = [],
   subscription,
   onOpenSubscriptionModal,
   onOpenAIImitationModal,
@@ -71,7 +73,7 @@ Fui projetado com foco em **ciência do exercício, controle biomecânico e otim
 
 **Seu Perfil Biométrico:**
 - **Nível:** ${profile.experience.toUpperCase()} (${profile.availableDays}x/semana - Fullbody Matrix)
-- **Ambiente:** ${profile.equipmentAccess === 'full_gym' ? 'Academia Completa' : profile.equipmentAccess === 'small_gym' ? 'Academia de Condomínio' : 'Home Gym / Peso Corporal'}
+- **Ambiente:** ${profile.environment === 'full_gym' ? 'Academia Completa' : profile.environment === 'small_gym' ? 'Academia de Condomínio' : 'Home Gym / Peso Corporal'}
 
 Como posso orientar seus treinos ou estratégia metabólica hoje?`,
       time: new Date().toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' }),
@@ -124,7 +126,7 @@ Como posso orientar seus treinos ou estratégia metabólica hoje?`,
     setQueryCount((prev) => prev + 1);
 
     try {
-      const aiResponseText = await askAICoach(promptText, profile, program);
+      const aiResponseText = await askAICoach(promptText, profile, program, workoutLogs);
 
       const aiMsg: ChatMessage = {
         id: (Date.now() + 1).toString(),

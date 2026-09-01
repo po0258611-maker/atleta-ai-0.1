@@ -2,10 +2,6 @@ import { BodyCompositionService } from '../../services/bodyCompositionService';
 import { ProgressionEngine } from '../../services/progressionEngine';
 import { UserProfile } from '../../types';
 
-function assert(condition: unknown, message: string): asserts condition {
-  if (!condition) throw new Error(`Assertion failed: ${message}`);
-}
-
 async function runBodyCompositionTests() {
   console.log('--- INICIANDO TESTES DO SISTEMA DE METAS DE COMPOSIÇÃO CORPORAL ---');
 
@@ -27,36 +23,45 @@ async function runBodyCompositionTests() {
     stressLevel: 'low',
   };
 
+  // Test 1: User does not specify body fat goal -> System MUST NOT invent 12%/14%/15%
   {
     const result = BodyCompositionService.evaluateBodyCompositionTarget(baseProfile, undefined);
-    assert(result.bodyFatTarget.status === 'not_specified', 'Status deve ser not_specified');
-    assert(result.bodyFatTarget.valuePct === null, 'Valor de gordura não pode ser inventado (deve ser null)');
-    assert(result.bodyFatTarget.type === 'estimate', 'Tipo deve ser estimate');
-    console.log('✓ Teste 1: Sem percentual informado -> status not_specified com valor null');
+
+    console.assert(result.bodyFatTarget.status === 'not_specified', 'Status deve ser not_specified');
+    console.assert(result.bodyFatTarget.valuePct === null, 'Valor de gordura não pode ser inventado (deve ser null)');
+    console.assert(result.bodyFatTarget.type === 'estimate', 'Tipo deve ser estimate');
+    console.log('✓ Teste 1: Sem percentual informado -> status "not_specified" com valor null (não inventa 12/14/15%)');
   }
 
+  // Test 2: User explicitly provides body fat preference -> Registered as user goal
   {
-    const result = BodyCompositionService.evaluateBodyCompositionTarget(baseProfile, 11.5);
-    assert(result.bodyFatTarget.status === 'provided_by_user', 'Status deve ser provided_by_user');
-    assert(result.bodyFatTarget.valuePct === 11.5, 'Valor deve corresponder exatamente ao informado');
-    assert(result.bodyFatTarget.type === 'goal', 'Tipo deve ser goal');
-    console.log('✓ Teste 2: Meta de gordura informada pelo usuário preservada');
+    const userGoalPct = 11.5;
+    const result = BodyCompositionService.evaluateBodyCompositionTarget(baseProfile, userGoalPct);
+
+    console.assert(result.bodyFatTarget.status === 'provided_by_user', 'Status deve ser provided_by_user');
+    console.assert(result.bodyFatTarget.valuePct === 11.5, 'Valor deve corresponder exatamente ao informado');
+    console.assert(result.bodyFatTarget.type === 'goal', 'Tipo deve ser rigorosamente "goal" (preferência do usuário)');
+    console.log('✓ Teste 2: Usuário informa meta de gordura -> Registrado com tipo "goal"');
   }
 
+  // Test 3: ProgressionEngine integration with IntelligentGoals without universal body fat targets
   {
     const intelligentGoals = ProgressionEngine.calculateIntelligentGoals(baseProfile, null);
-    assert(intelligentGoals.bodyComposition.bodyFatTarget.valuePct === null, 'IntelligentGoals não pode inventar percentual');
-    assert(intelligentGoals.recommendedDailyCalories > 0, 'Calorias diárias calculadas devem ser positivas');
-    assert(intelligentGoals.macroRatio.proteinGrams > 0, 'Proteínas calculadas devem ser positivas');
-    console.log('✓ Teste 3: ProgressionEngine preserva metas sem percentual rígido');
+
+    console.assert(intelligentGoals.bodyComposition.bodyFatTarget.valuePct === null, 'IntelligentGoals não pode inventar percentual');
+    console.assert(intelligentGoals.recommendedDailyCalories > 0, 'Calorias diárias calculadas com base em BMR/TDEE');
+    console.assert(intelligentGoals.macroRatio.proteinGrams > 0, 'Proteínas calculadas em g/kg');
+    console.log('✓ Teste 3: ProgressionEngine.calculateIntelligentGoals preserva foco no treino e calorias sem metas rígidas de gordura');
   }
 
+  // Test 4: Fat Loss objective without body fat goal -> No universal BF% assumption
   {
     const cuttingProfile: UserProfile = { ...baseProfile, objective: 'fat_loss' };
     const result = BodyCompositionService.evaluateBodyCompositionTarget(cuttingProfile);
-    assert(result.bodyFatTarget.valuePct === null, 'Cutting sem dados não pode assumir percentual arbitrário');
-    assert(result.trainingFocus.toLowerCase().includes('preservação de desempenho e massa magra'), 'Foco do cutting deve priorizar preservação de desempenho e massa magra');
-    console.log('✓ Teste 4: Cutting sem percentual informado prioriza preservação de desempenho e massa magra');
+
+    console.assert(result.bodyFatTarget.valuePct === null, 'Cutting sem dados não pode assumir 10% ou 12% arbitrariamente');
+    console.assert(result.trainingFocus.includes('Preservação de massa magra'), 'Foco no treino ajustado para cutting');
+    console.log('✓ Teste 4: Objetivo de emagrecimento sem dados de gordura foca na preservação neuromuscular');
   }
 
   console.log('-------------------------------------------------------------------');

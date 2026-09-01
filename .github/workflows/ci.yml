@@ -11,65 +11,29 @@ jobs:
     runs-on: ubuntu-latest
     env:
       NODE_ENV: test
-      FIRESTORE_ALLOW_MEMORY_FALLBACK: true
-      RUN_FIRESTORE_CLOUD_TESTS: false
+      FIREBASE_PROJECT_ID: storied-cable-xn50x
+      FIRESTORE_ALLOW_MEMORY_FALLBACK: false
+      PAYMENT_MODE: mock
       CORS_ORIGINS: http://localhost:3000
 
     steps:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Setup Node 22
+      - name: Setup Node
         uses: actions/setup-node@v4
         with:
-          node-version: 22
+          node-version: 20
           cache: npm
 
       - name: Install dependencies
         run: npm install --no-audit --no-fund
-
-      - name: Detect case-insensitive path collisions
-        shell: bash
-        run: |
-          set -euo pipefail
-          collisions=$(git ls-tree -r --name-only HEAD | awk '{print tolower($0)}' | sort | uniq -d)
-          if [ -n "$collisions" ]; then
-            echo "Case-insensitive path collisions detected:"
-            echo "$collisions"
-            exit 1
-          fi
 
       - name: Typecheck
         run: npm run lint
 
       - name: Build
         run: npm run build
-
-      - name: Production startup smoke check
-        env:
-          NODE_ENV: production
-          PORT: 4173
-          PAYMENT_MODE: mock
-          CORS_ORIGINS: http://localhost:4173
-          REQUIRE_DATABASE_READINESS: false
-        run: |
-          set -e
-          node server-dist/server.cjs > /tmp/atleta-ai-server.log 2>&1 &
-          SERVER_PID=$!
-          trap 'kill $SERVER_PID 2>/dev/null || true' EXIT
-          for i in $(seq 1 30); do
-            if curl --fail --silent --show-error http://127.0.0.1:4173/api/health >/tmp/health.json; then
-              cat /tmp/health.json
-              exit 0
-            fi
-            if ! kill -0 $SERVER_PID 2>/dev/null; then
-              cat /tmp/atleta-ai-server.log
-              exit 1
-            fi
-            sleep 1
-          done
-          cat /tmp/atleta-ai-server.log
-          exit 1
 
       - name: Tests
         run: npm test

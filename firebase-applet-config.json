@@ -1,11 +1,12 @@
 {
-  "projectId": "storied-cable-xn50x",
-  "appId": "1:482115660781:web:1ed1db76263a2e7a7295e4",
-  "apiKey": "AIzaSyDLEQALkk_A7JHuOeMl_njWslVE6iPjllY",
-  "authDomain": "storied-cable-xn50x.firebaseapp.com",
-  "storageBucket": "storied-cable-xn50x.firebasestorage.app",
-  "messagingSenderId": "482115660781",
+  "projectId": "gen-lang-client-0402109874",
+  "appId": "1:705014961128:web:f2a75a71701f6b88fd4a5d",
+  "apiKey": "AIzaSyBW1s5hKVoh2IErCrLeM3PUe_WMSDVRPio",
+  "authDomain": "gen-lang-client-0402109874.firebaseapp.com",
+  "firestoreDatabaseId": "ai-studio-atletaai01-ac7174e9-9da4-4d2f-a110-6d8feb46983d",
+  "storageBucket": "gen-lang-client-0402109874.firebasestorage.app",
+  "messagingSenderId": "705014961128",
   "measurementId": "",
-  "oAuthClientId": "482115660781-peb6l66o9fmdavjbq1jvlo3nvrekbeqm.apps.googleusercontent.com",
+  "oAuthClientId": "705014961128-jv1jlomddp3ds9smqj662renplhskgh9.apps.googleusercontent.com",
   "recaptchaSiteKey": ""
 }

@@ -10,17 +10,23 @@ import firebaseConfig from '../../firebase-applet-config.json';
 
 const app = getApps().length > 0 ? getApp() : initializeApp(firebaseConfig);
 
+const databaseId = (firebaseConfig as { firestoreDatabaseId?: string }).firestoreDatabaseId || undefined;
+
 let firestoreInstance: Firestore;
 
 try {
-  firestoreInstance = initializeFirestore(app, {
-    localCache: persistentLocalCache({
-      tabManager: persistentMultipleTabManager(),
-    }),
-  });
+  firestoreInstance = initializeFirestore(
+    app,
+    {
+      localCache: persistentLocalCache({
+        tabManager: persistentMultipleTabManager(),
+      }),
+    },
+    databaseId
+  );
 } catch {
   // If already initialized or fallback needed
-  firestoreInstance = getFirestore(app);
+  firestoreInstance = databaseId ? getFirestore(app, databaseId) : getFirestore(app);
 }
 
 export const db: Firestore = firestoreInstance;

@@ -404,6 +404,7 @@ export default function App() {
                 <AICoachView
                   profile={userProfile}
                   program={program}
+                  workoutLogs={workoutLogs}
                   subscription={subscription}
                   onOpenSubscriptionModal={() => setIsSubscriptionModalOpen(true)}
                   onOpenPremiumGate={(title, desc) => setIsPremiumGateOpen(true)}

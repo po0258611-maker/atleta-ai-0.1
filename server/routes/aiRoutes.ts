@@ -6,18 +6,22 @@ import { requireFeatureEntitlement } from '../middlewares/authorization';
 
 export const aiRouter = Router();
 
-// Authenticate before applying the limiter so authenticated requests can be keyed by athlete UID.
+// /api/ai-coach protegido: 
+// 1. Rate Limiting por IP
+// 2. Autenticação estrita via Firebase ID Token (requireAuth)
+// 3. Validação autoritativa de Entitlements e Quotas no Backend (requireFeatureEntitlement)
 aiRouter.post(
-  '/ai-coach',
-  requireAuth,
-  rateLimiter,
-  requireFeatureEntitlement('AI_COACH_MESSAGES'),
+  '/ai-coach', 
+  rateLimiter, 
+  requireAuth, 
+  requireFeatureEntitlement('AI_COACH_MESSAGES'), 
   handleAICoach
 );
 
+// /api/explain-prescription protegido por autenticação
 aiRouter.post(
-  '/explain-prescription',
-  requireAuth,
-  rateLimiter,
+  '/explain-prescription', 
+  rateLimiter, 
+  requireAuth, 
   handleExplainPrescription
 );
