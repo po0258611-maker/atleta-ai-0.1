@@ -80,6 +80,8 @@ export class MercadoPagoPixProvider implements PaymentProvider {
         amountCents: existing.amountCents,
         currency: existing.currency,
         paymentMethod: existing.paymentMethod,
+        qrCodeUrl: existing.qrCodeUrl,
+        copiaECola: existing.qrCode,
         expiresAt: existing.expiresAt,
         idempotencyKey: existing.idempotencyKey,
         createdAt: existing.createdAt,
@@ -137,6 +139,8 @@ export class MercadoPagoPixProvider implements PaymentProvider {
       updatedAt: createdAt,
       expiresAt,
       providerStatus: payment.status,
+      qrCode: transactionData.qr_code,
+      qrCodeUrl: result.qrCodeUrl,
     });
 
     logger.info(`Mercado Pago PIX criado: ${payment.id} | R$ ${amount.toFixed(2)} | status=${payment.status || 'unknown'}`);
