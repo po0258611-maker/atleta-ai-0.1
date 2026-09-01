@@ -11,7 +11,7 @@ jobs:
     runs-on: ubuntu-latest
     env:
       NODE_ENV: test
-      FIREBASE_PROJECT_ID: storied-cable-xn50x
+      FIREBASE_PROJECT_ID: gen-lang-client-0402109874
       FIRESTORE_ALLOW_MEMORY_FALLBACK: false
       PAYMENT_MODE: mock
       CORS_ORIGINS: http://localhost:3000
@@ -23,11 +23,32 @@ jobs:
       - name: Setup Node
         uses: actions/setup-node@v4
         with:
-          node-version: 20
-          cache: npm
+          node-version: 22
 
       - name: Install dependencies
         run: npm install --no-audit --no-fund
+
+      - name: Detect case-insensitive path collisions
+        shell: bash
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          seen = {}
+          collisions = []
+          for p in Path('.').rglob('*'):
+              if not p.is_file() or '.git' in p.parts or 'node_modules' in p.parts:
+                  continue
+              key = str(p).lower()
+              if key in seen and seen[key] != str(p):
+                  collisions.append((seen[key], str(p)))
+              else:
+                  seen[key] = str(p)
+          if collisions:
+              print('Case-insensitive path collisions found:')
+              for a, b in collisions:
+                  print(f'- {a} <-> {b}')
+              raise SystemExit(1)
+          PY
 
       - name: Typecheck
         run: npm run lint
