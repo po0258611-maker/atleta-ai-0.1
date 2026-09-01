@@ -8,6 +8,7 @@ import { PixPaymentProvider } from './pixPaymentProvider';
 import { MercadoPagoPixProvider } from './mercadoPagoPixProvider';
 import { StripeGatewayProvider } from './stripePaymentProvider';
 import { subscriptionServerRepository } from '../../repositories/subscriptionServerRepository';
+import { paymentTransactionRepository } from '../../repositories/paymentTransactionRepository';
 import { logger } from '../../middlewares/logger';
 import { getPaidPlan } from '../../config/plans';
 import { SERVER_CONFIG } from '../../config/env';
@@ -22,14 +23,10 @@ export class PaymentManagerService {
       case 'pix':
       case 'mercadopago':
       case 'mercadopago_pix':
-        // In live mode PIX is always processed by Mercado Pago.
-        // The local provider remains available only for non-production tests.
         if (SERVER_CONFIG.PAYMENT_MODE === 'live') return this.mercadoPagoPixProvider;
         return this.pixMockProvider;
       case 'pix_direct':
-        if (SERVER_CONFIG.PAYMENT_MODE === 'live') {
-          throw new Error('PIX_DIRECT_FORBIDDEN_IN_LIVE_MODE');
-        }
+        if (SERVER_CONFIG.PAYMENT_MODE === 'live') throw new Error('PIX_DIRECT_FORBIDDEN_IN_LIVE_MODE');
         return this.pixMockProvider;
       case 'credit_card':
       case 'stripe':
@@ -41,17 +38,12 @@ export class PaymentManagerService {
 
   async initiatePayment(input: CreatePaymentInput): Promise<PaymentTransactionResult> {
     const plan = getPaidPlan(input.planSlug);
-    if (!plan || plan.amountCents !== input.amountCents) {
-      throw new Error('INVALID_SERVER_PRICING');
-    }
-
-    const provider = this.getProvider(input.paymentMethod);
-    return provider.createPayment(input);
+    if (!plan || plan.amountCents !== input.amountCents) throw new Error('INVALID_SERVER_PRICING');
+    return this.getProvider(input.paymentMethod).createPayment(input);
   }
 
   async checkPaymentStatus(providerName: string, transactionId: string): Promise<PaymentGatewayStatus> {
-    const provider = this.getProvider(providerName);
-    return provider.getPaymentStatus(transactionId);
+    return this.getProvider(providerName).getPaymentStatus(transactionId);
   }
 
   async processVerifiedPayment(
@@ -62,6 +54,16 @@ export class PaymentManagerService {
   ): Promise<void> {
     const plan = getPaidPlan(planSlug);
     if (!plan) throw new Error('INVALID_PLAN');
+
+    if (providerName === 'mercadopago') {
+      const transaction = await paymentTransactionRepository.findByTransactionId(transactionId);
+      if (!transaction) throw new Error('MERCADOPAGO_TRANSACTION_NOT_FOUND');
+      if (transaction.provider !== 'mercadopago') throw new Error('MERCADOPAGO_PROVIDER_MISMATCH');
+      if (transaction.userId !== userId) throw new Error('MERCADOPAGO_USER_MISMATCH');
+      if (transaction.planSlug !== plan.slug) throw new Error('MERCADOPAGO_PLAN_MISMATCH');
+      if (transaction.currency !== 'BRL' || transaction.amountCents !== plan.amountCents) throw new Error('MERCADOPAGO_TRANSACTION_AMOUNT_MISMATCH');
+      if (transaction.status === 'refunded' || transaction.status === 'canceled') throw new Error('MERCADOPAGO_TRANSACTION_NOT_SETTLEABLE');
+    }
 
     const now = new Date();
     const periodEnd = new Date(now.getTime() + 30 * 24 * 60 * 60 * 1000).toISOString();
@@ -82,6 +84,10 @@ export class PaymentManagerService {
       priceBrl: plan.priceBrl,
       lastPaymentDate: now.toISOString(),
     });
+
+    if (providerName === 'mercadopago') {
+      await paymentTransactionRepository.updateStatus(transactionId, 'approved', 'approved');
+    }
 
     logger.info(`Assinatura ativada após verificação real de pagamento: ${userId} (${transactionId})`);
   }
