@@ -31,29 +31,30 @@ function safeEqualHex(a: string, b: string): boolean {
   return crypto.timingSafeEqual(Buffer.from(a.toLowerCase(), 'hex'), Buffer.from(b.toLowerCase(), 'hex'));
 }
 
-function verifySignature(dataId: string, requestId: string, signature: string): boolean {
+export function verifyMercadoPagoWebhookSignature(
+  dataId: string,
+  requestId: string,
+  signature: string,
+  secret = SERVER_CONFIG.MERCADOPAGO_WEBHOOK_SECRET
+): boolean {
+  if (!dataId || !requestId || !secret) return false;
   const parsed = parseSignature(signature);
   if (!parsed.ts || !parsed.v1 || !/^\d+$/.test(parsed.ts)) return false;
-
   const tsSeconds = Number(parsed.ts);
   if (!Number.isSafeInteger(tsSeconds)) return false;
   const nowSeconds = Math.floor(Date.now() / 1000);
   if (Math.abs(nowSeconds - tsSeconds) > MAX_TIMESTAMP_SKEW_SECONDS) return false;
-  if (!SERVER_CONFIG.PIX_WEBHOOK_SECRET) return false;
-
   const manifest = `id:${dataId};request-id:${requestId};ts:${parsed.ts};`;
-  const digest = crypto.createHmac('sha256', SERVER_CONFIG.PIX_WEBHOOK_SECRET).update(manifest, 'utf8').digest('hex');
+  const digest = crypto.createHmac('sha256', secret).update(manifest, 'utf8').digest('hex');
   return safeEqualHex(digest, parsed.v1);
 }
 
 async function getPayment(paymentId: string): Promise<MercadoPagoPayment> {
   if (!SERVER_CONFIG.MERCADOPAGO_ACCESS_TOKEN) throw new Error('MERCADOPAGO_ACCESS_TOKEN_NOT_CONFIGURED');
-
   const response = await fetch(`${API_URL}/v1/payments/${encodeURIComponent(paymentId)}`, {
     method: 'GET',
     headers: { Authorization: `Bearer ${SERVER_CONFIG.MERCADOPAGO_ACCESS_TOKEN}`, Accept: 'application/json' },
   });
-
   if (!response.ok) throw new Error(`MERCADOPAGO_PAYMENT_LOOKUP_FAILED:${response.status}`);
   return response.json() as Promise<MercadoPagoPayment>;
 }
@@ -66,14 +67,8 @@ function parseExternalReference(reference: string | undefined) {
 }
 
 export class MercadoPagoWebhookService {
-  async processPaymentWebhook(input: {
-    paymentId: string;
-    requestId: string;
-    signature: string;
-    eventId: string;
-    eventType: string;
-  }): Promise<{ processed: boolean; reason: string }> {
-    if (!verifySignature(input.paymentId, input.requestId, input.signature)) {
+  async processPaymentWebhook(input: { paymentId: string; requestId: string; signature: string; eventId: string; eventType: string }): Promise<{ processed: boolean; reason: string }> {
+    if (!verifyMercadoPagoWebhookSignature(input.paymentId, input.requestId, input.signature)) {
       logger.warn('Mercado Pago webhook rejeitado por assinatura inválida', { eventId: input.eventId });
       return { processed: false, reason: 'INVALID_SIGNATURE' };
     }
@@ -84,39 +79,21 @@ export class MercadoPagoWebhookService {
     try {
       const payment = await getPayment(input.paymentId);
       if (String(payment.id) !== input.paymentId) throw new Error('MERCADOPAGO_PAYMENT_ID_MISMATCH');
-
       const reference = parseExternalReference(payment.external_reference);
       if (!reference) throw new Error('MERCADOPAGO_EXTERNAL_REFERENCE_INVALID');
-
       const plan = getPaidPlan(reference.planSlug);
       if (!plan) throw new Error('INVALID_PLAN');
-
       const expectedAmount = Number((plan.amountCents / 100).toFixed(2));
-      if (payment.currency_id !== 'BRL' || payment.transaction_amount !== expectedAmount) {
-        throw new Error('MERCADOPAGO_AMOUNT_MISMATCH');
-      }
+      if (payment.currency_id !== 'BRL' || payment.transaction_amount !== expectedAmount) throw new Error('MERCADOPAGO_AMOUNT_MISMATCH');
 
       if (payment.status !== 'approved') {
-        await subscriptionServerRepository.markWebhookCompleted('mercadopago', input.eventId, input.eventType, 'ignored', {
-          paymentId: input.paymentId,
-          paymentStatus: payment.status || 'unknown',
-        });
+        await subscriptionServerRepository.markWebhookCompleted('mercadopago', input.eventId, input.eventType, 'ignored', { paymentId: input.paymentId, paymentStatus: payment.status || 'unknown' });
         return { processed: true, reason: `PAYMENT_NOT_APPROVED:${payment.status || 'unknown'}` };
       }
 
       await paymentManagerService.processVerifiedPayment(reference.userId, input.paymentId, 'mercadopago', reference.planSlug);
-
-      await subscriptionServerRepository.markWebhookCompleted('mercadopago', input.eventId, input.eventType, 'completed', {
-        userId: reference.userId,
-        planSlug: reference.planSlug,
-        paymentId: input.paymentId,
-      });
-
-      logger.info('Mercado Pago payment aprovado e assinatura ativada', {
-        paymentId: input.paymentId,
-        userId: reference.userId,
-        plan: reference.planSlug,
-      });
+      await subscriptionServerRepository.markWebhookCompleted('mercadopago', input.eventId, input.eventType, 'completed', { userId: reference.userId, planSlug: reference.planSlug, paymentId: input.paymentId });
+      logger.info('Mercado Pago payment aprovado e assinatura ativada', { paymentId: input.paymentId, userId: reference.userId, plan: reference.planSlug });
       return { processed: true, reason: 'PAYMENT_APPROVED' };
     } catch (error) {
       await subscriptionServerRepository.releaseWebhookClaim('mercadopago', input.eventId);
