@@ -28,6 +28,17 @@ jobs:
       - name: Install dependencies
         run: npm install --no-audit --no-fund
 
+      - name: Detect case-insensitive path collisions
+        shell: bash
+        run: |
+          set -euo pipefail
+          collisions=$(git ls-tree -r --name-only HEAD | awk '{print tolower($0)}' | sort | uniq -d)
+          if [ -n "$collisions" ]; then
+            echo "Case-insensitive path collisions detected:"
+            echo "$collisions"
+            exit 1
+          fi
+
       - name: Typecheck
         run: npm run lint
 
