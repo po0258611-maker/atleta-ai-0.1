@@ -22,9 +22,8 @@ subscriptionRouter.post('/webhooks/:provider', handlePaymentWebhook);
 
 // Payment Intents & Orders (Requires Firebase Auth Bearer Token)
 subscriptionRouter.post('/create-intent', requireAuth, handleCreatePaymentIntent);
-// Dedicated MP status route comes before the generic route and derives ownership from persisted transaction data.
-subscriptionRouter.get('/status/:transactionId', requireAuth, handleMercadoPagoPaymentStatus);
-subscriptionRouter.get('/status-generic/:transactionId', requireAuth, handleCheckPaymentStatus);
+subscriptionRouter.get('/status/mercadopago/:transactionId', requireAuth, handleMercadoPagoPaymentStatus);
+subscriptionRouter.get('/status/:transactionId', requireAuth, handleCheckPaymentStatus);
 subscriptionRouter.get('/history', requireAuth, handleGetSubscriptionHistory);
 
 // Subscription Lifecycle Management (Authoritative backend operations)
