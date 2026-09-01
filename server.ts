@@ -27,9 +27,22 @@ function applySecurityHeaders(app: express.Express) {
 
 function isTrustedAiStudioOrigin(originStr: string): boolean {
   try {
-    const host = new URL(originStr).hostname.toLowerCase();
-    return host === "ai.studio" || host.endsWith(".ai.studio") || host === "aistudio.google.com" || host.endsWith(".aistudio.google.com");
-  } catch { return false; }
+    const url = new URL(originStr);
+    const host = url.hostname.toLowerCase();
+    return (
+      host === "localhost" ||
+      host === "127.0.0.1" ||
+      host.endsWith(".run.app") ||
+      host === "ai.studio" ||
+      host.endsWith(".ai.studio") ||
+      host === "aistudio.google.com" ||
+      host.endsWith(".aistudio.google.com") ||
+      host === "googleusercontent.com" ||
+      host.endsWith(".googleusercontent.com")
+    );
+  } catch {
+    return false;
+  }
 }
 
 function applyCors(app: express.Express) {
