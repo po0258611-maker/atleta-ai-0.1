@@ -9,7 +9,7 @@ import { subscriptionRouter } from "./server/routes/subscriptionRoutes";
 import { databaseRouter } from "./server/routes/databaseRoutes";
 import { errorHandler } from "./server/middlewares/errorHandler";
 import { logger } from "./server/middlewares/logger";
-import { SERVER_CONFIG } from "./server/config/env";
+import { SERVER_CONFIG, validateProductionConfig } from "./server/config/env";
 import { getFirestoreAdapter } from "./server/repositories/firestoreAdapter";
 
 function applySecurityHeaders(app: express.Express) {
@@ -97,6 +97,8 @@ function applyCors(app: express.Express) {
 }
 
 async function startServer() {
+  validateProductionConfig();
+
   const app = express();
   const PORT = SERVER_CONFIG.PORT;
   const isProduction = SERVER_CONFIG.NODE_ENV === "production";
