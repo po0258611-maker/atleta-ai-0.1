@@ -1,57 +1,73 @@
 import { Exercise, MuscleGroup } from '../types';
 
 /**
+ * Public image root. Using Vite's BASE_URL keeps images working when the app
+ * is served from a sub-path (for example, an embedded preview/workspace).
+ */
+const PUBLIC_BASE_URL = (import.meta.env.BASE_URL || '/').replace(/\/$/, '');
+
+function publicImagePath(filename: string): string {
+  return `${PUBLIC_BASE_URL}/images/${filename}`.replace(/([^:]\/)\/+/g, '$1');
+}
+
+/**
  * Muscle group to anatomical image mapping
  */
 const MUSCLE_IMAGE_MAP: Record<string, string> = {
-  quadriceps: '/images/athletic_squat_3d_1786105958653.jpg',
-  gluteos: '/images/athletic_squat_3d_1786105958653.jpg',
-  panturrilhas: '/images/athletic_squat_3d_1786105958653.jpg',
-  posteriores: '/images/athletic_hinge_3d_1786106034930.jpg',
-  lombar: '/images/athletic_hinge_3d_1786106034930.jpg',
-  peitoral: '/images/athletic_bench_3d_1786105975477.jpg',
-  costas: '/images/athletic_row_3d_1786105987331.jpg',
-  dorsais: '/images/athletic_row_3d_1786105987331.jpg',
-  trapezio: '/images/athletic_row_3d_1786105987331.jpg',
-  ombros: '/images/athletic_overhead_3d_1786105999818.jpg',
-  deltoides: '/images/athletic_overhead_3d_1786105999818.jpg',
-  biceps: '/images/athletic_arms_3d_1786106010485.jpg',
-  triceps: '/images/athletic_arms_3d_1786106010485.jpg',
-  antebraco: '/images/athletic_arms_3d_1786106010485.jpg',
-  abdominais: '/images/athletic_arms_3d_1786106010485.jpg',
-  core: '/images/athletic_arms_3d_1786106010485.jpg',
+  quadriceps: publicImagePath('athletic_squat_3d_1786105958653.jpg'),
+  gluteos: publicImagePath('athletic_squat_3d_1786105958653.jpg'),
+  panturrilhas: publicImagePath('athletic_squat_3d_1786105958653.jpg'),
+  posteriores: publicImagePath('athletic_hinge_3d_1786106034930.jpg'),
+  lombar: publicImagePath('athletic_hinge_3d_1786106034930.jpg'),
+  peitoral: publicImagePath('athletic_bench_3d_1786105975477.jpg'),
+  costas: publicImagePath('athletic_row_3d_1786105987331.jpg'),
+  dorsais: publicImagePath('athletic_row_3d_1786105987331.jpg'),
+  trapezio: publicImagePath('athletic_row_3d_1786105987331.jpg'),
+  ombros: publicImagePath('athletic_overhead_3d_1786105999818.jpg'),
+  deltoides: publicImagePath('athletic_overhead_3d_1786105999818.jpg'),
+  biceps: publicImagePath('athletic_arms_3d_1786106010485.jpg'),
+  triceps: publicImagePath('athletic_arms_3d_1786106010485.jpg'),
+  antebraco: publicImagePath('athletic_arms_3d_1786106010485.jpg'),
+  abdominais: publicImagePath('athletic_arms_3d_1786106010485.jpg'),
+  core: publicImagePath('athletic_arms_3d_1786106010485.jpg'),
 };
 
-const DEFAULT_IMAGE = '/images/athletic_squat_3d_1786105958653.jpg';
+const DEFAULT_IMAGE = publicImagePath('athletic_squat_3d_1786105958653.jpg');
 
 /**
- * Normalizes any exercise image path to a public path accessible in the browser
+ * Converts an internal/public image reference into a browser-accessible path.
+ * External URLs and data URLs are preserved unchanged.
  */
 export function normalizeImagePath(rawPath?: string): string | null {
   if (!rawPath) return null;
   const trimmed = rawPath.trim();
   if (!trimmed) return null;
 
-  // Convert '/src/assets/images/...' or 'src/assets/images/...' to '/images/...'
-  if (trimmed.includes('src/assets/images/')) {
-    const filename = trimmed.split('src/assets/images/').pop()?.replace(/^\//, '');
-    return filename ? `/images/${filename}` : null;
-  }
-
-  // If it's already a public path like '/images/...' or 'images/...'
-  if (trimmed.startsWith('/images/')) return trimmed;
-  if (trimmed.startsWith('images/')) return `/${trimmed}`;
-
-  // If it's an external URL (e.g. http/https)
   if (trimmed.startsWith('http://') || trimmed.startsWith('https://') || trimmed.startsWith('data:image/')) {
     return trimmed;
+  }
+
+  // Convert '/src/assets/images/...' or 'src/assets/images/...' to a public image path.
+  if (trimmed.includes('src/assets/images/')) {
+    const filename = trimmed.split('src/assets/images/').pop()?.replace(/^\//, '');
+    return filename ? publicImagePath(filename) : null;
+  }
+
+  // Already rooted in the public images directory. Rebase it through BASE_URL
+  // so embedded/sub-path previews do not request the wrong host root.
+  if (trimmed.startsWith('/images/')) {
+    return `${PUBLIC_BASE_URL}${trimmed}`.replace(/([^:]\/)\/+/g, '$1');
+  }
+
+  if (trimmed.startsWith('images/')) {
+    return `${PUBLIC_BASE_URL}/${trimmed}`.replace(/([^:]\/)\/+/g, '$1');
   }
 
   return trimmed;
 }
 
 /**
- * Gets a guaranteed working image URL for any exercise or muscle group
+ * Gets a guaranteed image URL for any exercise or muscle group.
  */
 export function getExerciseImageUrl(
   exercise?: Partial<Exercise> | null,
