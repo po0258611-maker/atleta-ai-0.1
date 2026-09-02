@@ -11,7 +11,7 @@
     "clean": "rm -rf dist server.cjs",
     "typecheck": "tsc --noEmit",
     "lint": "npm run typecheck",
-    "test": "tsx src/engine/tests/workoutEngine.test.ts && tsx src/engine/tests/workoutEngineV2.test.ts && tsx src/engine/tests/workoutEngineAdaptiveMetrics.test.ts && tsx src/engine/tests/workoutPrescriptionValidator.test.ts && tsx src/engine/tests/exerciseCatalogValidator.test.ts && tsx src/engine/tests/progressionIntegration.test.ts && tsx src/engine/tests/nextWorkoutAdaptive.test.ts && tsx src/engine/tests/progressionEngine.test.ts && tsx src/engine/tests/oneRepMax.test.ts && tsx src/engine/tests/bodyComposition.test.ts && tsx src/engine/tests/fatigueEngine.test.ts && tsx src/engine/tests/bioAtlas.test.ts && tsx src/engine/tests/aiArchitecture.test.ts && tsx src/engine/tests/aiPrescriptionAudit.test.ts && tsx server/tests/firestorePersistence.test.ts && tsx server/tests/atomicQuotaConcurrency.test.ts && tsx server/tests/webhookSecurity.test.ts && tsx server/tests/mercadoPagoWebhook.test.ts && tsx server/tests/rbac.test.ts && tsx server/tests/subscription.test.ts && tsx server/tests/entitlementEngine.test.ts && tsx server/tests/paymentProvider.test.ts && tsx server/tests/supabaseDatabase.test.ts && tsx server/tests/rateLimitDiagnostic.test.ts && tsx server/tests/aiProtectionOrder.test.ts && tsx server/tests/comprehensiveSystem.test.ts"
+    "test": "tsx src/engine/tests/workoutEngine.test.ts && tsx src/engine/tests/workoutEngineV2.test.ts && tsx src/engine/tests/workoutEngineAdaptiveMetrics.test.ts && tsx src/engine/tests/workoutPrescriptionValidator.test.ts && tsx src/engine/tests/exerciseCatalogValidator.test.ts && tsx src/engine/tests/progressionIntegration.test.ts && tsx src/engine/tests/nextWorkoutAdaptive.test.ts && tsx src/engine/tests/progressionEngine.test.ts && tsx src/engine/tests/oneRepMax.test.ts && tsx src/engine/tests/bodyComposition.test.ts && tsx src/engine/tests/fatigueEngine.test.ts && tsx src/engine/tests/bioAtlas.test.ts && tsx src/engine/tests/aiArchitecture.test.ts && tsx src/engine/tests/aiPrescriptionAudit.test.ts && tsx server/tests/firestorePersistence.test.ts && tsx server/tests/atomicQuotaConcurrency.test.ts && tsx server/tests/webhookSecurity.test.ts && tsx server/tests/mercadoPagoWebhook.test.ts && tsx server/tests/rbac.test.ts && tsx server/tests/subscription.test.ts && tsx server/tests/entitlementEngine.test.ts && tsx server/tests/paymentProvider.test.ts && tsx server/tests/supabaseDatabase.test.ts && tsx server/tests/rateLimitDiagnostic.test.ts && tsx server/tests/aiRateLimiter.test.ts && tsx server/tests/comprehensiveSystem.test.ts"
   },
   "dependencies": {
     "@google/genai": "^2.4.0",
@@ -29,12 +29,11 @@
     "jspdf": "^4.2.1",
     "lucide-react": "^0.546.0",
     "motion": "^12.23.24",
-    "react": "^19.0.1",
-    "react-dom": "^19.0.1",
     "recharts": "^3.10.1",
     "tsx": "^4.21.0",
     "tailwindcss": "^4.1.14",
-    "typescript": "~5.8.2"
+    "typescript": "~5.8.2",
+    "vite": "^6.2.3"
   },
   "devDependencies": {}
 }
