@@ -132,7 +132,7 @@ function selectionPattern(item: WorkoutItem) {
   return item.exercise.padraoMotor;
 }
 
-function ensureProgramUniqueness(program: FullBodyProgram): string[] {
+function ensureProgramUniqueness(program: FullBodyProgram, additionallyBlockedIds: Set<string> = new Set()): string[] {
   const usedIds = new Set<string>();
   const repaired: string[] = [];
 
@@ -145,7 +145,7 @@ function ensureProgramUniqueness(program: FullBodyProgram): string[] {
       }
 
       try {
-        const blockedIds = new Set(usedIds);
+        const blockedIds = new Set([...usedIds, ...additionallyBlockedIds]);
         blockedIds.add(currentId);
         const repairProfile: UserProfile = {
           ...program.profile,
@@ -232,8 +232,9 @@ export function generateFullBodyWorkout(
 ): FullBodyProgram {
   const recentExerciseIds = extractRecentExerciseIds(recentContext);
   const base = generateV2(rawProfile);
-  const uniquenessRepairs = ensureProgramUniqueness(base);
+  const initialUniquenessRepairs = ensureProgramUniqueness(base, recentExerciseIds);
   const rotation = rotateRecentExercises(base, recentExerciseIds);
+  const postRotationUniquenessRepairs = ensureProgramUniqueness(base, recentExerciseIds);
   const target = base.targetWeeklyVolumeMap || base.weeklyVolumeMap;
   const priorities = base.profile.priorities || [];
 
@@ -248,8 +249,9 @@ export function generateFullBodyWorkout(
   }));
 
   const warnings = [...(base.generationWarnings || [])];
-  if (uniquenessRepairs.length > 0) {
-    warnings.push(`Catálogo duplicado normalizado: ${uniquenessRepairs.length} exercício(s) foram substituídos por alternativas seguras do mesmo padrão.`);
+  const uniquenessRepairs = initialUniquenessRepairs.length + postRotationUniquenessRepairs.length;
+  if (uniquenessRepairs > 0) {
+    warnings.push(`Catálogo duplicado normalizado: ${uniquenessRepairs} exercício(s) foram substituídos por alternativas seguras do mesmo padrão.`);
   }
   if (rotation.rotated.length > 0) {
     warnings.push(`Histórico recente: ${rotation.rotated.length} exercício(s) rotacionado(s) para aumentar variedade sem alterar os padrões do Full Body.`);
