@@ -141,8 +141,22 @@ function rotateRecentExercises(
       if (!recentExerciseIds.has(currentId)) continue;
 
       try {
-        const result = selectExerciseForPattern(item.exercise.padraoMotor, program.profile, usedIds);
-        if (result.selectedExercise.id === currentId || recentExerciseIds.has(result.selectedExercise.id)) continue;
+        const blockedRecentIds = new Set(recentExerciseIds);
+        const rotationProfile: UserProfile = {
+          ...program.profile,
+          forbiddenExercises: Array.from(
+            new Set([...program.profile.forbiddenExercises, ...blockedRecentIds]),
+          ),
+        };
+        const result = selectExerciseForPattern(item.exercise.padraoMotor, rotationProfile, usedIds);
+
+        // Historical rotation is allowed only when we preserve the original movement pattern.
+        if (
+          result.selectedExercise.padraoMotor !== item.exercise.padraoMotor ||
+          blockedRecentIds.has(result.selectedExercise.id)
+        ) {
+          continue;
+        }
 
         const previousName = item.exercise.nome;
         item.exercise = result.selectedExercise;
