@@ -29,17 +29,10 @@ function isTrustedAiStudioOrigin(originStr: string): boolean {
   try {
     const url = new URL(originStr);
     const host = url.hostname.toLowerCase();
-    return (
-      host === "localhost" ||
-      host === "127.0.0.1" ||
-      host.endsWith(".run.app") ||
-      host === "ai.studio" ||
-      host.endsWith(".ai.studio") ||
-      host === "aistudio.google.com" ||
-      host.endsWith(".aistudio.google.com") ||
-      host === "googleusercontent.com" ||
-      host.endsWith(".googleusercontent.com")
-    );
+    const isLocalhost = host === "localhost" || host === "127.0.0.1";
+    const isAiStudio = host === "ai.studio" || host === "aistudio.google.com";
+    if (!isLocalhost && url.protocol !== "https:") return false;
+    return isLocalhost || isAiStudio;
   } catch {
     return false;
   }
