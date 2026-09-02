@@ -127,7 +127,18 @@ function runWorkoutEngineV2Tests() {
 
     assert(adapted.splitDays.every((day) => day.items.every((item) => item.targetSets >= 2)), 'Rotação histórica não pode criar prescrição sem séries.');
     assert(hasRotationEvidence, 'Histórico repetido deve gerar evidência de rotação ou de limitação segura do catálogo.');
-    assert(adaptedIds.size === adaptedItems.length, 'A rotação deve preservar unicidade de exercícios no programa sempre que o catálogo permitir.');
+
+    if (adaptedIds.size !== adaptedItems.length) {
+      const counts = adaptedItems.reduce<Map<string, number>>((map, item) => {
+        map.set(item.exercise.id, (map.get(item.exercise.id) || 0) + 1);
+        return map;
+      }, new Map());
+      const duplicates = [...counts.entries()]
+        .filter(([, count]) => count > 1)
+        .map(([id, count]) => `${id}(${count})`)
+        .join(', ');
+      throw new Error(`A rotação deve preservar unicidade de exercícios no programa sempre que o catálogo permitir. Duplicados: ${duplicates}`);
+    }
 
     if (actualRotation === 0) {
       assert(
