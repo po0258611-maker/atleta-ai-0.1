@@ -29,6 +29,7 @@ function resolveFirebaseProjectId(): string {
 const rateLimitWindowMs = 60 * 1000;
 const configuredRateLimit = Number(process.env.RATE_LIMIT_MAX_REQUESTS);
 const configuredAiRateLimit = Number(process.env.AI_RATE_LIMIT_MAX_REQUESTS);
+const configuredAiRateLimitWindow = Number(process.env.AI_RATE_LIMIT_WINDOW_MS);
 
 export const SERVER_CONFIG = {
   PORT: port,
@@ -49,6 +50,7 @@ export const SERVER_CONFIG = {
   TRUST_PROXY: process.env.TRUST_PROXY?.trim() === 'true',
   RATE_LIMIT_WINDOW_MS: rateLimitWindowMs,
   RATE_LIMIT_MAX_REQUESTS: Math.max(1, Number.isFinite(configuredRateLimit) ? configuredRateLimit : 300),
+  AI_RATE_LIMIT_WINDOW_MS: Math.max(1000, Number.isFinite(configuredAiRateLimitWindow) ? configuredAiRateLimitWindow : rateLimitWindowMs),
   AI_RATE_LIMIT_MAX_REQUESTS: Math.max(1, Number.isFinite(configuredAiRateLimit) ? configuredAiRateLimit : 30),
   MAX_PROMPT_LENGTH: Math.max(100, Number(process.env.MAX_PROMPT_LENGTH) || 4000),
 };
