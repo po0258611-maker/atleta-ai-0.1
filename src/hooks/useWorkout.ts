@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { UserProfile, FullBodyProgram, WorkoutLog } from '../types';
-import { generateFullBodyWorkout } from '../engine/workoutEngineV2';
+import { generateFullBodyWorkout } from '../engine/workoutEngineAdaptive';
 import { FirestoreDataService } from '../services/firestoreDataService';
 
 export const INITIAL_PROFILE: UserProfile = {
