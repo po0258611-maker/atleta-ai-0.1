@@ -1,5 +1,5 @@
-import { FullBodyProgram, MuscleGroup, WorkoutItem, WorkoutDay } from '../types';
-import { generateFullBodyWorkout as generateV2 } from './workoutEngineV2';
+import { FullBodyProgram, MuscleGroup, WorkoutItem, WorkoutDay, WorkoutLog } from '../types';
+import { generateFullBodyWorkout as generateV2, selectExerciseForPattern } from './workoutEngineV2';
 
 const MUSCLES: MuscleGroup[] = [
   'peitoral', 'costas', 'ombros', 'biceps', 'triceps',
@@ -103,7 +103,72 @@ function rebuildDay(day: WorkoutDay, items: WorkoutItem[]): WorkoutDay {
   };
 }
 
-export function generateFullBodyWorkout(rawProfile: Parameters<typeof generateV2>[0]): FullBodyProgram {
+function recentExerciseFrequency(logs: WorkoutLog[], maxLogs: number = 4): Map<string, number> {
+  const counts = new Map<string, number>();
+  [...logs]
+    .sort((a, b) => b.date.localeCompare(a.date))
+    .slice(0, maxLogs)
+    .forEach((log) => {
+      const uniqueExerciseIds = new Set(log.exerciseLogs.map((exercise) => exercise.exerciseId));
+      uniqueExerciseIds.forEach((exerciseId) => counts.set(exerciseId, (counts.get(exerciseId) || 0) + 1));
+    });
+  return counts;
+}
+
+function rotateRepeatedExercises(program: FullBodyProgram, logs: WorkoutLog[]): FullBodyProgram {
+  if (logs.length === 0) return program;
+
+  const recentFrequency = recentExerciseFrequency(logs);
+  if (recentFrequency.size === 0) return program;
+
+  const usedIds = new Set(program.splitDays.flatMap((day) => day.items.map((item) => item.exercise.id)));
+  let rotations = 0;
+
+  const splitDays = program.splitDays.map((day) => {
+    const items = day.items.map((item) => {
+      const recentCount = recentFrequency.get(item.exercise.id) || 0;
+      if (recentCount < 2) return item;
+
+      const reservedIds = new Set(usedIds);
+      reservedIds.delete(item.exercise.id);
+      const selection = selectExerciseForPattern(item.exercise.padraoMotor, program.profile, reservedIds);
+
+      if (selection.selectedExercise.id === item.exercise.id) return item;
+
+      usedIds.delete(item.exercise.id);
+      usedIds.add(selection.selectedExercise.id);
+      rotations += 1;
+
+      return {
+        ...item,
+        id: `item_${day.id}_${selection.selectedExercise.id}`,
+        exercise: selection.selectedExercise,
+        originalExercise: undefined,
+        isReplaced: false,
+        replacementNotes: `Rotação automática: o exercício anterior apareceu em ${recentCount} das últimas ${Math.min(4, logs.length)} sessões.`,
+        orderRationale: `${item.orderRationale} Rotação aplicada para reduzir repetição recente e preservar o padrão motor.`,
+      };
+    });
+
+    return rebuildDay(day, items);
+  });
+
+  if (rotations === 0) return program;
+
+  return {
+    ...program,
+    splitDays,
+    generationWarnings: Array.from(new Set([
+      ...(program.generationWarnings || []),
+      `${rotations} exercício(s) foram rotacionados com base no histórico recente de sessões.`,
+    ])),
+  };
+}
+
+export function generateFullBodyWorkout(
+  rawProfile: Parameters<typeof generateV2>[0],
+  recentLogs: WorkoutLog[] = [],
+): FullBodyProgram {
   const base = generateV2(rawProfile);
   const target = base.targetWeeklyVolumeMap || base.weeklyVolumeMap;
   const priorities = base.profile.priorities || [];
@@ -142,11 +207,35 @@ export function generateFullBodyWorkout(rawProfile: Parameters<typeof generateV2
     });
   });
 
-  return {
+  const program: FullBodyProgram = {
     ...base,
     splitDays,
     weeklyVolumeMap,
     frequencyMap,
     generationWarnings: Array.from(new Set(generationWarnings)),
+  };
+
+  const rotated = rotateRepeatedExercises(program, recentLogs);
+  if (rotated === program) return program;
+
+  const rotatedVolume = EMPTY();
+  const rotatedFrequency = EMPTY();
+  rotated.splitDays.forEach((day) => {
+    day.items.forEach((item) => {
+      const primary = item.exercise.grupoMuscular;
+      rotatedVolume[primary] += item.targetSets;
+      rotatedFrequency[primary] += 1;
+      item.exercise.musculosSecundarios.forEach((secondary) => {
+        const factor = indirectFactor(item, secondary);
+        rotatedVolume[secondary] += Math.round(item.targetSets * factor * 10) / 10;
+        rotatedFrequency[secondary] += factor;
+      });
+    });
+  });
+
+  return {
+    ...rotated,
+    weeklyVolumeMap: rotatedVolume,
+    frequencyMap: rotatedFrequency,
   };
 }
