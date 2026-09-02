@@ -91,6 +91,13 @@ function limitationConflict(exercise: Exercise, limitations: string[]): boolean 
   return conflicts.some(([keywords, predicate]) => keywords.some((keyword) => text.includes(normalizeText(keyword))) && predicate(exercise));
 }
 
+function isSafeCandidate(exercise: Exercise, profile: UserProfile, forbidden: Set<string>, pattern: MovementPattern | 'isolation_upper' | 'isolation_lower'): boolean {
+  return matchesPattern(exercise, pattern)
+    && !isForbidden(exercise, forbidden)
+    && environmentAllows(exercise, profile.environment)
+    && !limitationConflict(exercise, profile.limitations);
+}
+
 function sanitizeProfile(profile: Partial<UserProfile>): UserProfile {
   const availableDays = ([2, 3, 4, 5].includes(profile.availableDays as number) ? profile.availableDays : 4) as 2 | 3 | 4 | 5;
   const timePerSessionMin = ([30, 45, 60, 75, 90].includes(profile.timePerSessionMin as number) ? profile.timePerSessionMin : 60) as 30 | 45 | 60 | 75 | 90;
@@ -231,30 +238,24 @@ export function selectExerciseForPattern(
   replacementNotes: string;
 } {
   const forbidden = normalizeForbiddenList(profile.forbiddenExercises);
-  const compatible = EXERCISE_DATABASE.filter((exercise) =>
-    matchesPattern(exercise, pattern) &&
-    !isForbidden(exercise, forbidden) &&
-    environmentAllows(exercise, profile.environment) &&
-    !limitationConflict(exercise, profile.limitations)
-  );
+  const compatible = EXERCISE_DATABASE.filter((exercise) => isSafeCandidate(exercise, profile, forbidden, pattern));
 
   if (compatible.length === 0) {
-    const environmentCandidates = EXERCISE_DATABASE.filter((exercise) =>
-      matchesPattern(exercise, pattern) &&
-      !isForbidden(exercise, forbidden) &&
-      !limitationConflict(exercise, profile.limitations)
-    );
+    const replacementCandidates = EXERCISE_DATABASE
+      .filter((exercise) => matchesPattern(exercise, pattern) && !isForbidden(exercise, forbidden) && !limitationConflict(exercise, profile.limitations))
+      .flatMap((exercise) => getSmartReplacements(exercise, profile.environment, profile.forbiddenExercises)
+        .map((replacement) => ({ exercise: replacement, original: exercise })))
+      .filter(({ exercise }) => isSafeCandidate(exercise, profile, forbidden, pattern));
 
-    const fallback = environmentCandidates
-      .flatMap((exercise) => getSmartReplacements(exercise, profile.environment, profile.forbiddenExercises).map((replacement) => ({ exercise: replacement, original: exercise })))
-      .find(({ exercise }) => environmentAllows(exercise, profile.environment) && !isForbidden(exercise, forbidden));
+    const fallback = replacementCandidates
+      .sort((a, b) => scoreExercise(b.exercise, profile, pattern, usedIds) - scoreExercise(a.exercise, profile, pattern, usedIds))[0];
 
     if (fallback) {
       return {
         selectedExercise: fallback.exercise,
         originalExercise: fallback.original,
         isReplaced: true,
-        replacementNotes: `Substituição automática para compatibilidade com ${profile.environment}.`,
+        replacementNotes: `Substituição automática para compatibilidade com ${profile.environment}, preservando as limitações e proibições cadastradas.`,
       };
     }
 
