@@ -18,7 +18,6 @@ export interface SubscriptionState {
   lastPaymentDate?: string;
   pixQrCodeUrl?: string;
   pixCopiaECola?: string;
-  lastPaymentDate?: string;
 }
 
 export type MuscleGroup =
