@@ -26,6 +26,10 @@ function resolveFirebaseProjectId(): string {
   return process.env.FIREBASE_PROJECT_ID?.trim() || '';
 }
 
+const rateLimitWindowMs = 60 * 1000;
+const configuredRateLimit = Number(process.env.RATE_LIMIT_MAX_REQUESTS);
+const configuredAiRateLimit = Number(process.env.AI_RATE_LIMIT_MAX_REQUESTS);
+
 export const SERVER_CONFIG = {
   PORT: port,
   NODE_ENV,
@@ -43,8 +47,9 @@ export const SERVER_CONFIG = {
   STRIPE_WEBHOOK_SECRET: process.env.STRIPE_WEBHOOK_SECRET?.trim() || (isProduction ? '' : 'whsec_test_stripe_secret_key_athleta_ai_2026'),
   PIX_WEBHOOK_SECRET: process.env.PIX_WEBHOOK_SECRET?.trim() || (isProduction ? '' : 'pix_whsec_test_secret_athleta_ai_2026'),
   TRUST_PROXY: process.env.TRUST_PROXY?.trim() === 'true',
-  RATE_LIMIT_WINDOW_MS: 60 * 1000,
-  RATE_LIMIT_MAX_REQUESTS: Math.max(1, Number(process.env.RATE_LIMIT_MAX_REQUESTS) || 300),
+  RATE_LIMIT_WINDOW_MS: rateLimitWindowMs,
+  RATE_LIMIT_MAX_REQUESTS: Math.max(1, Number.isFinite(configuredRateLimit) ? configuredRateLimit : 300),
+  AI_RATE_LIMIT_MAX_REQUESTS: Math.max(1, Number.isFinite(configuredAiRateLimit) ? configuredAiRateLimit : 30),
   MAX_PROMPT_LENGTH: Math.max(100, Number(process.env.MAX_PROMPT_LENGTH) || 4000),
 };
 
