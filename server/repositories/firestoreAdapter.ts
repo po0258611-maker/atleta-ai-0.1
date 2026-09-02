@@ -9,7 +9,7 @@ export interface IFirestoreCollection<T = any> extends IFirestoreQuery<T> { doc(
 export interface IFirestoreTransaction { get(collectionName: string, docId: string): Promise<FirestoreDocumentSnapshot>; set(collectionName: string, docId: string, data: any, options?: { merge?: boolean }): Promise<void> | void; delete(collectionName: string, docId: string): Promise<void> | void; }
 export interface IFirestoreAdapter { collection(name: string): IFirestoreCollection; runTransaction<T>(updateFunction: (transaction: IFirestoreTransaction) => Promise<T>): Promise<T>; }
 
-const allowMemoryFallback = process.env.NODE_ENV !== 'production' && process.env.FIRESTORE_ALLOW_MEMORY_FALLBACK === 'true';
+const allowMemoryFallback = process.env.FIRESTORE_DISABLE_MEMORY_FALLBACK !== 'true';
 
 function isFirestoreUnavailableError(err: any): boolean {
   if (!err) return false;
