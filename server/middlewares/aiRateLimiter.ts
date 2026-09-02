@@ -21,20 +21,19 @@ function getClientIp(req: Request): string {
   return req.ip || req.socket.remoteAddress || 'unknown-ip';
 }
 
-function consume(key: string) {
+function consume(key: string, maxRequests: number) {
   const now = Date.now();
   const existing = requestMap.get(key);
 
   if (!existing || now >= existing.resetTime) {
-    const created: RateLimitRecord = {
+    requestMap.set(key, {
       count: 1,
       resetTime: now + SERVER_CONFIG.RATE_LIMIT_WINDOW_MS,
-    };
-    requestMap.set(key, created);
+    });
     return { allowed: true, retryAfterSeconds: 0 };
   }
 
-  if (existing.count >= SERVER_CONFIG.RATE_LIMIT_MAX_REQUESTS) {
+  if (existing.count >= maxRequests) {
     return {
       allowed: false,
       retryAfterSeconds: Math.max(1, Math.ceil((existing.resetTime - now) / 1000)),
@@ -60,16 +59,16 @@ function reject(res: Response, keyType: 'IP' | 'USER', retryAfterSeconds: number
 }
 
 /**
- * Cheap pre-auth guard. It intentionally uses only the trusted Express IP value
- * and must run before Firebase token verification to contain unauthenticated abuse.
+ * Cheap pre-auth guard. Uses only the trusted Express IP value and runs before
+ * Firebase token verification to contain unauthenticated request abuse.
  */
 export function aiIpRateLimiter(req: Request, res: Response, next: NextFunction) {
-  const key = `ai:ip:${getClientIp(req)}`;
-  const result = consume(key);
+  const ip = getClientIp(req);
+  const result = consume(`ai:ip:${ip}`, SERVER_CONFIG.RATE_LIMIT_MAX_REQUESTS);
 
   if (!result.allowed) {
     logger.warn('AI IP rate limit exceeded', {
-      ip: getClientIp(req),
+      ip,
       path: req.path,
       retryAfter: result.retryAfterSeconds,
     });
@@ -80,8 +79,8 @@ export function aiIpRateLimiter(req: Request, res: Response, next: NextFunction)
 }
 
 /**
- * Authoritative authenticated guard. The user id is taken only from the
- * Firebase Admin-verified token already attached by requireAuth.
+ * Authoritative authenticated guard. UID is accepted only after Firebase Admin
+ * verification has attached req.athlete.
  */
 export function aiUserRateLimiter(req: Request, res: Response, next: NextFunction) {
   const uid = req.athlete?.uid;
@@ -95,8 +94,7 @@ export function aiUserRateLimiter(req: Request, res: Response, next: NextFunctio
     });
   }
 
-  const key = `ai:user:${uid}`;
-  const result = consume(key);
+  const result = consume(`ai:user:${uid}`, SERVER_CONFIG.AI_RATE_LIMIT_MAX_REQUESTS);
 
   if (!result.allowed) {
     logger.warn('AI user rate limit exceeded', {
