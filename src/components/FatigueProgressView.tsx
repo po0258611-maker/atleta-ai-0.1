@@ -3,6 +3,7 @@ import { UserProfile, WorkoutLog, FatigueAssessment, MuscleGroup, SubscriptionSt
 import { calculateFatigueScore } from '../engine/progressEngine';
 import { FeaturePermissions, PermissionService } from '../services/permissionService';
 import { ProgressionEngine, PeriodizationAnalysis } from '../services/progressionEngine';
+import { formatWorkoutLogDate } from './WorkoutLoggerView';
 import {
   Flame,
   Moon,
@@ -888,7 +889,7 @@ export const FatigueProgressView: React.FC<FatigueProgressViewProps> = ({
                 {workoutLogs.map((log) => (
                   <div key={log.id} className="bg-slate-950 p-3 rounded-xl border border-slate-800 text-xs space-y-1">
                     <div className="flex justify-between font-bold text-slate-200">
-                      <span>Sessão {log.dayId} ({log.date})</span>
+                      <span>Sessão {log.dayId} ({formatWorkoutLogDate(log.date)})</span>
                       <span className="text-cyan-400">RPE {log.sessionRPE}</span>
                     </div>
                     <p className="text-slate-400 text-[11px]">

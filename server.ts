@@ -10,6 +10,7 @@ import { databaseRouter } from "./server/routes/databaseRoutes";
 import { errorHandler } from "./server/middlewares/errorHandler";
 import { logger } from "./server/middlewares/logger";
 import { SERVER_CONFIG, validateProductionConfig } from "./server/config/env";
+import { BUILD_INFO } from "./server/config/buildInfo";
 import { getFirestoreAdapter } from "./server/repositories/firestoreAdapter";
 
 function applySecurityHeaders(app: express.Express) {
@@ -19,7 +20,9 @@ function applySecurityHeaders(app: express.Express) {
     res.setHeader("X-Content-Type-Options", "nosniff");
     res.setHeader("Referrer-Policy", "strict-origin-when-cross-origin");
     res.setHeader("Permissions-Policy", "camera=(), microphone=(), geolocation=()");
-    res.setHeader("Content-Security-Policy", isProduction ? "default-src 'self'; base-uri 'self'; frame-ancestors 'self' https:; object-src 'none'; img-src 'self' data: https: blob:; style-src 'self' 'unsafe-inline' https:; script-src 'self' 'unsafe-inline' 'unsafe-eval' https:; connect-src 'self' https: wss:; font-src 'self' data: https:" : "default-src 'self' 'unsafe-inline' 'unsafe-eval' data: blob: https: http: ws: wss:; base-uri 'self'; frame-ancestors 'self' https: http:; object-src 'none'");
+    const productionCsp = "default-src 'self'; base-uri 'self'; frame-ancestors 'self' https:; object-src 'none'; img-src 'self' data: https: blob:; style-src 'self' 'unsafe-inline' https:; script-src 'self' 'unsafe-inline'; connect-src 'self' https: wss:; font-src 'self' data: https:";
+    const developmentCsp = "default-src 'self' 'unsafe-inline' 'unsafe-eval' data: blob: https: http: ws: wss:; base-uri 'self'; frame-ancestors 'self' https: http:; object-src 'none'";
+    res.setHeader("Content-Security-Policy", isProduction ? productionCsp : developmentCsp);
     if (isProduction && (req.secure || req.headers["x-forwarded-proto"] === "https")) res.setHeader("Strict-Transport-Security", "max-age=31536000; includeSubDomains");
     next();
   });
@@ -83,13 +86,37 @@ async function startServer() {
   applyCors(app);
   app.use(express.json({ limit: "1mb", strict: true, verify: (req: any, _res, buf) => { req.rawBody = buf.toString("utf8"); } }));
   app.use(express.urlencoded({ extended: false, limit: "100kb" }));
-  app.get("/api/health", (_req, res) => res.status(200).json({ status: "ok", version: "2.1.0", environment: SERVER_CONFIG.NODE_ENV, timestamp: new Date().toISOString() }));
+  app.get("/api/health", (_req, res) =>
+    res.status(200).json({
+      status: "ok",
+      version: BUILD_INFO.version,
+      commitSha: BUILD_INFO.commitSha,
+      buildTime: BUILD_INFO.buildTime,
+      environment: SERVER_CONFIG.NODE_ENV,
+      timestamp: new Date().toISOString(),
+    })
+  );
   app.get("/api/ready", async (_req, res) => {
     const database = await checkReadiness();
     const buildArtifactReady = !isProduction || fs.existsSync(path.join(process.cwd(), "dist", "index.html"));
     const ready = database && buildArtifactReady;
-    if (!ready) return res.status(503).json({ status: "not_ready", checks: { database, buildArtifacts: buildArtifactReady }, timestamp: new Date().toISOString() });
-    return res.status(200).json({ status: "ready", version: "2.1.0", checks: { database, buildArtifacts: buildArtifactReady }, timestamp: new Date().toISOString() });
+    if (!ready) {
+      return res.status(503).json({
+        status: "not_ready",
+        version: BUILD_INFO.version,
+        commitSha: BUILD_INFO.commitSha,
+        checks: { database, buildArtifacts: buildArtifactReady },
+        timestamp: new Date().toISOString(),
+      });
+    }
+    return res.status(200).json({
+      status: "ready",
+      version: BUILD_INFO.version,
+      commitSha: BUILD_INFO.commitSha,
+      buildTime: BUILD_INFO.buildTime,
+      checks: { database, buildArtifacts: buildArtifactReady },
+      timestamp: new Date().toISOString(),
+    });
   });
   app.use("/api/auth", authRouter);
   app.use("/api/entitlements", entitlementRouter);
@@ -112,6 +139,8 @@ async function startServer() {
     app.use(express.static(distPath));
     app.get("*", (_req, res) => res.sendFile(indexPath));
   }
-  app.listen(PORT, "0.0.0.0", () => logger.info(`ATLETA AI Server running on port ${PORT}`));
+  app.listen(PORT, "0.0.0.0", () =>
+    logger.info(`ATLETA AI Server running on port ${PORT} [v${BUILD_INFO.version} | sha:${BUILD_INFO.commitSha} | env:${SERVER_CONFIG.NODE_ENV}]`)
+  );
 }
 startServer().catch((error) => { logger.error("Falha fatal ao iniciar o servidor", { error }); process.exit(1); });

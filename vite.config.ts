@@ -6,6 +6,18 @@ import { defineConfig } from 'vite';
 
 const projectRoot = dirname(fileURLToPath(import.meta.url));
 
+const commitSha =
+  process.env.COMMIT_SHA?.trim() ||
+  process.env.GIT_COMMIT_SHA?.trim() ||
+  process.env.GITHUB_SHA?.trim() ||
+  process.env.VITE_COMMIT_SHA?.trim() ||
+  process.env.SOURCE_VERSION?.trim() ||
+  process.env.K_REVISION?.trim() ||
+  'local-dev';
+
+const appVersion = process.env.npm_package_version || '0.3.0';
+const buildTime = new Date().toISOString();
+
 export default defineConfig(({ mode }) => ({
   base: '/',
   plugins: [react(), tailwindcss()],
@@ -16,6 +28,12 @@ export default defineConfig(({ mode }) => ({
   },
   define: {
     'process.env.NODE_ENV': JSON.stringify(mode === 'production' ? 'production' : 'development'),
+    __APP_BUILD_INFO__: JSON.stringify({
+      version: appVersion,
+      commitSha,
+      buildTime,
+      environment: mode,
+    }),
   },
   server: {
     port: Number(process.env.PORT) || 3000,

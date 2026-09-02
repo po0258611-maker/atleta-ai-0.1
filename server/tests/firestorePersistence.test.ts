@@ -150,13 +150,21 @@ async function runPersistenceTests() {
 
   // Verificação de conectividade real com Firestore Cloud
   console.log('--- VERIFICAÇÃO DE INTEGRAÇÃO COM FIRESTORE CLOUD REAL ---');
-  try {
-    const liveAdminDb = getAdminFirestore();
-    const liveTestDoc = liveAdminDb.collection('subscriptions').doc(`__ping_test_${Date.now()}`);
-    await liveTestDoc.get();
-    console.log('✓ INTEGRAÇÃO FIRESTORE CLOUD VALIDADA COM SUCESSO');
-  } catch (cloudErr: any) {
-    console.log(`[AVISO] INTEGRAÇÃO FIRESTORE NÃO VALIDADA (Ambiente de sandbox sem banco Cloud provisionado: ${cloudErr.message})`);
+  const shouldRunCloudTest = process.env.RUN_FIRESTORE_CLOUD_TEST === 'true';
+
+  if (!shouldRunCloudTest) {
+    console.log('[INFO] Smoke test de Firestore Cloud IGNORADO (Defina RUN_FIRESTORE_CLOUD_TEST=true para executar verificação contra banco real).');
+  } else {
+    console.log('[INFO] RUN_FIRESTORE_CLOUD_TEST=true detectado. Executando verificação de conectividade real...');
+    try {
+      const liveAdminDb = getAdminFirestore();
+      const liveTestDoc = liveAdminDb.collection('subscriptions').doc(`__ping_test_${Date.now()}`);
+      await liveTestDoc.get();
+      console.log('✓ INTEGRAÇÃO FIRESTORE CLOUD REAL VALIDADA COM SUCESSO');
+    } catch (cloudErr: any) {
+      console.error(`❌ [FALHA] Erro na verificação de conectividade com Firestore Cloud:`, cloudErr);
+      throw new Error(`Falha no smoke test de Firestore Cloud: ${cloudErr?.message || cloudErr}`);
+    }
   }
 
   console.log('----------------------------------------------------------------------');

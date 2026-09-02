@@ -114,12 +114,39 @@ export class MemoryFirestoreAdapter implements IFirestoreAdapter {
     };
   }
   async runTransaction<T>(updateFunction: (transaction: IFirestoreTransaction) => Promise<T>): Promise<T> {
-    let releaseLock!: () => void; const currentLock = new Promise<void>((resolve) => { releaseLock = resolve; }); const previousLock = this.transactionQueue; this.transactionQueue = currentLock; await previousLock;
+    let releaseLock!: () => void;
+    const currentLock = new Promise<void>((resolve) => { releaseLock = resolve; });
+    const previousLock = this.transactionQueue;
+    this.transactionQueue = currentLock;
+    await previousLock;
+
     try {
-      const stagedWrites: Array<() => void> = [];
-      const tx: IFirestoreTransaction = { get: async (c, d) => this.collection(c).doc(d).get(), set: (c, d, data, options) => { stagedWrites.push(() => { void this.collection(c).doc(d).set(data, options); }); }, delete: (c, d) => { stagedWrites.push(() => { void this.collection(c).doc(d).delete(); }); } };
-      const result = await updateFunction(tx); for (const write of stagedWrites) write(); return result;
-    } finally { releaseLock(); }
+      const stagedWrites: Array<() => Promise<void>> = [];
+      const tx: IFirestoreTransaction = {
+        get: async (c, d) => this.collection(c).doc(d).get(),
+        set: (c, d, data, options) => {
+          stagedWrites.push(async () => {
+            await this.collection(c).doc(d).set(data, options);
+          });
+        },
+        delete: (c, d) => {
+          stagedWrites.push(async () => {
+            await this.collection(c).doc(d).delete();
+          });
+        },
+      };
+
+      const result = await updateFunction(tx);
+
+      // Garante a execução sequencial e o await completo de todas as mutações pendentes
+      for (const write of stagedWrites) {
+        await write();
+      }
+
+      return result;
+    } finally {
+      releaseLock();
+    }
   }
 }
 

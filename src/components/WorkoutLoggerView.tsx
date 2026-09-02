@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { FullBodyProgram, SetLog, WorkoutDay, WorkoutLog, Exercise } from '../types';
+import { FullBodyProgram, SetLog, WorkoutDay, WorkoutItem, WorkoutLog, Exercise } from '../types';
 import { calculateDoubleProgression } from '../engine/progressEngine';
 import { ExerciseDetailModal } from './ExerciseDetailModal';
 import { getExerciseImageUrl } from '../utils/exerciseImageHelper';
@@ -9,6 +9,257 @@ interface WorkoutLoggerViewProps {
   program: FullBodyProgram;
   activeDayId: 'A' | 'B' | 'C' | 'D';
   onSaveLog: (log: WorkoutLog) => void;
+}
+
+export interface RepRange {
+  min: number;
+  max: number;
+  lower: number;
+  upper: number;
+}
+
+export const DEFAULT_REP_RANGE: RepRange = {
+  min: 8,
+  max: 12,
+  lower: 8,
+  upper: 12,
+};
+
+/**
+ * Robust and deterministic parser for exercise targetReps strings (e.g. "4-6", "6-10", "8-12", "8", "6 - 10").
+ * Guarantees:
+ * 1. Accepts range with spaces, dashes, or words ("6 - 10", "8-12")
+ * 2. Accepts single numbers ("8" -> lower: 8, upper: 8)
+ * 3. Never produces NaN
+ * 4. Never produces negative numbers or zero
+ * 5. Never produces inverted ranges (ensures lower <= upper)
+ * 6. Returns deterministic fallback for invalid, empty, or missing inputs
+ */
+export function parseRepRange(
+  targetReps?: string | null,
+  fallback: RepRange = DEFAULT_REP_RANGE
+): RepRange {
+  if (!targetReps || typeof targetReps !== 'string') {
+    return { ...fallback };
+  }
+
+  const trimmed = targetReps.trim();
+  if (!trimmed) {
+    return { ...fallback };
+  }
+
+  // Range match: "4-6", "6 - 10", "8 – 12", "10 to 15"
+  const rangeMatch = trimmed.match(/^(\d+)\s*(?:-|–|—|\.\.|to)\s*(\d+)$/i);
+  if (rangeMatch) {
+    const rawLower = parseInt(rangeMatch[1], 10);
+    const rawUpper = parseInt(rangeMatch[2], 10);
+
+    if (Number.isFinite(rawLower) && Number.isFinite(rawUpper) && rawLower > 0 && rawUpper > 0) {
+      const min = Math.min(rawLower, rawUpper);
+      const max = Math.max(rawLower, rawUpper);
+      return {
+        min,
+        max,
+        lower: min,
+        upper: max,
+      };
+    }
+  }
+
+  // Single number match: "8", " 12 "
+  const singleMatch = trimmed.match(/^(\d+)$/);
+  if (singleMatch) {
+    const val = parseInt(singleMatch[1], 10);
+    if (Number.isFinite(val) && val > 0) {
+      return {
+        min: val,
+        max: val,
+        lower: val,
+        upper: val,
+      };
+    }
+  }
+
+  // Loose range match if extra text is present (e.g. "6-10 reps")
+  const looseRangeMatch = trimmed.match(/(\d+)\s*(?:-|–|—|\.\.|to)\s*(\d+)/i);
+  if (looseRangeMatch) {
+    const rawLower = parseInt(looseRangeMatch[1], 10);
+    const rawUpper = parseInt(looseRangeMatch[2], 10);
+
+    if (Number.isFinite(rawLower) && Number.isFinite(rawUpper) && rawLower > 0 && rawUpper > 0) {
+      const min = Math.min(rawLower, rawUpper);
+      const max = Math.max(rawLower, rawUpper);
+      return {
+        min,
+        max,
+        lower: min,
+        upper: max,
+      };
+    }
+  }
+
+  // Loose single number match (e.g. "10 reps")
+  const looseSingleMatch = trimmed.match(/(\d+)/);
+  if (looseSingleMatch) {
+    const val = parseInt(looseSingleMatch[1], 10);
+    if (Number.isFinite(val) && val > 0) {
+      return {
+        min: val,
+        max: val,
+        lower: val,
+        upper: val,
+      };
+    }
+  }
+
+  return { ...fallback };
+}
+
+export function parseInitialReps(targetReps?: string | null): number {
+  return parseRepRange(targetReps, { min: 10, max: 10, lower: 10, upper: 10 }).lower;
+}
+
+export function initializeWorkoutLoggerState(workoutDay?: WorkoutDay | null): Record<string, SetLog[]> {
+  const initialState: Record<string, SetLog[]> = {};
+  if (!workoutDay || !workoutDay.items) {
+    return initialState;
+  }
+
+  workoutDay.items.forEach((item) => {
+    const sets: SetLog[] = [];
+    const initialReps = parseInitialReps(item.targetReps);
+    const targetSets = typeof item.targetSets === 'number' && item.targetSets > 0 ? item.targetSets : 3;
+
+    for (let i = 1; i <= targetSets; i++) {
+      sets.push({
+        setNumber: i,
+        repsDone: initialReps,
+        weightKg: 0,
+        actualRIR: typeof item.targetRIR === 'number' ? item.targetRIR : 2,
+        completed: false,
+      });
+    }
+    initialState[item.id] = sets;
+  });
+
+  return initialState;
+}
+
+export function getItemProgression(
+  item: WorkoutItem,
+  sets: SetLog[],
+  fatigueScore: number = 40
+) {
+  const repRange = parseRepRange(item.targetReps);
+  return calculateDoubleProgression(
+    item.exercise.id,
+    item.exercise.nome,
+    sets,
+    [repRange.min, repRange.max],
+    item.exercise,
+    fatigueScore
+  );
+}
+
+/**
+ * Sanitizes repetition inputs ensuring non-negative integers.
+ */
+export function sanitizeReps(val: any, defaultVal: number = 0): number {
+  const num = typeof val === 'number' ? val : parseInt(String(val), 10);
+  if (!Number.isFinite(num) || isNaN(num)) return defaultVal;
+  return Math.max(0, Math.min(200, Math.floor(num)));
+}
+
+/**
+ * Sanitizes weight inputs ensuring non-negative finite numeric values.
+ */
+export function sanitizeWeight(val: any, defaultVal: number = 0): number {
+  const num = typeof val === 'number' ? val : parseFloat(String(val));
+  if (!Number.isFinite(num) || isNaN(num)) return defaultVal;
+  return Math.max(0, Math.min(1000, Number(num.toFixed(2))));
+}
+
+/**
+ * Sanitizes RIR (Reps in Reserve) ensuring valid integer range (0 to 10).
+ */
+export function sanitizeRIR(val: any, defaultVal: number = 2): number {
+  const num = typeof val === 'number' ? val : parseInt(String(val), 10);
+  if (!Number.isFinite(num) || isNaN(num)) return defaultVal;
+  return Math.max(0, Math.min(10, Math.floor(num)));
+}
+
+/**
+ * Sanitizes session RPE ensuring valid scale between 1 and 10.
+ */
+export function sanitizeRPE(val: any, defaultVal: number = 8): number {
+  const num = typeof val === 'number' ? val : parseFloat(String(val));
+  if (!Number.isFinite(num) || isNaN(num)) return defaultVal;
+  return Math.max(1, Math.min(10, Number(num.toFixed(1))));
+}
+
+/**
+ * Formats a workout log date for presentation in pt-BR locale.
+ * Backward compatible with legacy localized date strings (e.g. "02/09/2026")
+ * and standard canonical ISO 8601 timestamps (e.g. "2026-09-02T14:50:00.000Z").
+ */
+export function formatWorkoutLogDate(dateStr?: string | null): string {
+  if (!dateStr || typeof dateStr !== 'string') return '';
+
+  const trimmed = dateStr.trim();
+  // Preserve already formatted legacy strings (e.g. "02/09/2026")
+  if (/^\d{1,2}\/\d{1,2}\/\d{2,4}/.test(trimmed)) {
+    return trimmed;
+  }
+
+  const parsed = new Date(trimmed);
+  if (!isNaN(parsed.getTime())) {
+    return parsed.toLocaleDateString('pt-BR');
+  }
+
+  return trimmed;
+}
+
+/**
+ * Builds a WorkoutLog with canonical ISO 8601 timestamp for persistent storage.
+ */
+export function buildWorkoutLog(params: {
+  workoutDay: WorkoutDay;
+  durationMin: number;
+  sessionRPE: number;
+  sessionNotes: string;
+  exerciseLogsState: Record<string, SetLog[]>;
+  timestamp?: string;
+}): WorkoutLog {
+  const cleanRPE = sanitizeRPE(params.sessionRPE, 8);
+  const rawDuration = Number(params.durationMin);
+  const cleanDuration = Number.isFinite(rawDuration) && rawDuration > 0
+    ? Math.max(1, Math.min(360, Math.floor(rawDuration)))
+    : 60;
+
+  return {
+    id: `log_${Date.now()}`,
+    date: params.timestamp || new Date().toISOString(),
+    dayId: params.workoutDay.id,
+    durationMin: cleanDuration,
+    sessionRPE: cleanRPE,
+    notes: params.sessionNotes || '',
+    exerciseLogs: (params.workoutDay.items || []).map((item) => {
+      const rawSets = params.exerciseLogsState[item.id] || [];
+      const cleanSets: SetLog[] = rawSets.map((s, idx) => ({
+        setNumber: typeof s.setNumber === 'number' ? s.setNumber : idx + 1,
+        repsDone: sanitizeReps(s.repsDone, 0),
+        weightKg: sanitizeWeight(s.weightKg, 0),
+        actualRIR: sanitizeRIR(s.actualRIR, typeof item.targetRIR === 'number' ? item.targetRIR : 2),
+        completed: Boolean(s.completed),
+      }));
+
+      return {
+        exerciseId: item.exercise.id,
+        exerciseName: item.exercise.nome,
+        sets: cleanSets,
+      };
+    }),
+  };
 }
 
 export const WorkoutLoggerView: React.FC<WorkoutLoggerViewProps> = ({
@@ -21,26 +272,10 @@ export const WorkoutLoggerView: React.FC<WorkoutLoggerViewProps> = ({
   const workoutDay: WorkoutDay =
     program.splitDays.find((d) => d.id === activeDayId) || program.splitDays[0];
 
-  // State to hold active set entries per exercise item
+  // State to hold active set entries per exercise item with safe initialization (neutral weight, lower bound reps)
   const [exerciseLogsState, setExerciseLogsState] = useState<
     Record<string, SetLog[]>
-  >(() => {
-    const initialState: Record<string, SetLog[]> = {};
-    workoutDay.items.forEach((item) => {
-      const sets: SetLog[] = [];
-      for (let i = 1; i <= item.targetSets; i++) {
-        sets.push({
-          setNumber: i,
-          repsDone: 10,
-          weightKg: 20,
-          actualRIR: item.targetRIR,
-          completed: false,
-        });
-      }
-      initialState[item.id] = sets;
-    });
-    return initialState;
-  });
+  >(() => initializeWorkoutLoggerState(workoutDay));
 
   // Rest Timer State
   const [restTimerSec, setRestTimerSec] = useState<number>(0);
@@ -90,29 +325,30 @@ export const WorkoutLoggerView: React.FC<WorkoutLoggerViewProps> = ({
     val: number
   ) => {
     const updated = { ...exerciseLogsState };
-    const sets = [...updated[itemId]];
+    const sets = [...(updated[itemId] || [])];
+    if (!sets[setIdx]) return;
+
+    let cleanVal: any = val;
+    if (field === 'repsDone') cleanVal = sanitizeReps(val, 0);
+    else if (field === 'weightKg') cleanVal = sanitizeWeight(val, 0);
+    else if (field === 'actualRIR') cleanVal = sanitizeRIR(val, 2);
+
     sets[setIdx] = {
       ...sets[setIdx],
-      [field]: val,
+      [field]: cleanVal,
     };
     updated[itemId] = sets;
     setExerciseLogsState(updated);
   };
 
   const handleFinishWorkout = () => {
-    const log: WorkoutLog = {
-      id: `log_${Date.now()}`,
-      date: new Date().toLocaleDateString('pt-BR'),
-      dayId: workoutDay.id,
+    const log: WorkoutLog = buildWorkoutLog({
+      workoutDay,
       durationMin: program.profile.timePerSessionMin,
       sessionRPE,
-      notes: sessionNotes,
-      exerciseLogs: workoutDay.items.map((item) => ({
-        exerciseId: item.exercise.id,
-        exerciseName: item.exercise.nome,
-        sets: exerciseLogsState[item.id] || [],
-      })),
-    };
+      sessionNotes,
+      exerciseLogsState,
+    });
 
     onSaveLog(log);
     setLoggedSaved(true);
@@ -167,11 +403,10 @@ export const WorkoutLoggerView: React.FC<WorkoutLoggerViewProps> = ({
       <div className="space-y-6">
         {workoutDay.items.map((item, itemIdx) => {
           const sets = exerciseLogsState[item.id] || [];
-          const doubleProg = calculateDoubleProgression(
-            item.exercise.id,
-            item.exercise.nome,
+          const doubleProg = getItemProgression(
+            item,
             sets,
-            [6, 10]
+            program.systemicFatigueScore ?? 40
           );
 
           return (
