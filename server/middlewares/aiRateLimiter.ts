@@ -21,14 +21,14 @@ function getClientIp(req: Request): string {
   return req.ip || req.socket.remoteAddress || 'unknown-ip';
 }
 
-function consume(key: string, maxRequests: number) {
+function consume(key: string, maxRequests: number, windowMs: number) {
   const now = Date.now();
   const existing = requestMap.get(key);
 
   if (!existing || now >= existing.resetTime) {
     requestMap.set(key, {
       count: 1,
-      resetTime: now + SERVER_CONFIG.RATE_LIMIT_WINDOW_MS,
+      resetTime: now + windowMs,
     });
     return { allowed: true, retryAfterSeconds: 0 };
   }
@@ -64,7 +64,7 @@ function reject(res: Response, keyType: 'IP' | 'USER', retryAfterSeconds: number
  */
 export function aiIpRateLimiter(req: Request, res: Response, next: NextFunction) {
   const ip = getClientIp(req);
-  const result = consume(`ai:ip:${ip}`, SERVER_CONFIG.RATE_LIMIT_MAX_REQUESTS);
+  const result = consume(`ai:ip:${ip}`, SERVER_CONFIG.RATE_LIMIT_MAX_REQUESTS, SERVER_CONFIG.RATE_LIMIT_WINDOW_MS);
 
   if (!result.allowed) {
     logger.warn('AI IP rate limit exceeded', {
@@ -94,7 +94,7 @@ export function aiUserRateLimiter(req: Request, res: Response, next: NextFunctio
     });
   }
 
-  const result = consume(`ai:user:${uid}`, SERVER_CONFIG.AI_RATE_LIMIT_MAX_REQUESTS);
+  const result = consume(`ai:user:${uid}`, SERVER_CONFIG.AI_RATE_LIMIT_MAX_REQUESTS, SERVER_CONFIG.AI_RATE_LIMIT_WINDOW_MS);
 
   if (!result.allowed) {
     logger.warn('AI user rate limit exceeded', {
