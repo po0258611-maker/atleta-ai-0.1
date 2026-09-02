@@ -1,7 +1,7 @@
 import { generateFullBodyWorkout } from '../workoutEngineAdaptive';
 import { selectExerciseForPattern } from '../workoutEngineV2';
 import { EXERCISE_DATABASE } from '../exerciseData';
-import { UserProfile } from '../../types';
+import { UserProfile, WorkoutLog } from '../../types';
 
 function assert(condition: unknown, message: string): asserts condition {
   if (!condition) throw new Error(message);
@@ -28,6 +28,28 @@ function buildProfile(overrides: Partial<UserProfile> = {}): UserProfile {
   };
 }
 
+function makeLog(exerciseIds: string[], date: string): WorkoutLog {
+  return {
+    id: `log_${date}`,
+    date,
+    dayId: 'A',
+    durationMin: 55,
+    sessionRPE: 8,
+    notes: '',
+    exerciseLogs: exerciseIds.map((exerciseId) => ({
+      exerciseId,
+      exerciseName: exerciseId,
+      sets: [{
+        setNumber: 1,
+        repsDone: 10,
+        weightKg: 50,
+        actualRIR: 2,
+        completed: true,
+      }],
+    })),
+  };
+}
+
 function runWorkoutEngineV2Tests() {
   console.log('--- INICIANDO TESTES DO WORKOUT ENGINE ADAPTATIVO ---');
 
@@ -45,7 +67,11 @@ function runWorkoutEngineV2Tests() {
   {
     const bench = EXERCISE_DATABASE.find((exercise) => exercise.id === 'ex_bench_press_barbell');
     assert(bench, 'Supino de referência precisa existir no catálogo.');
-    const result = selectExerciseForPattern('horizontal_push', buildProfile({ forbiddenExercises: ['ex_bench_press_barbell', 'Supino Reto com Halteres', 'ex_incline_dumbbell_press'] }), new Set());
+    const result = selectExerciseForPattern(
+      'horizontal_push',
+      buildProfile({ forbiddenExercises: ['ex_bench_press_barbell', 'Supino Reto com Halteres', 'ex_incline_dumbbell_press'] }),
+      new Set(),
+    );
     assert(result.selectedExercise.id !== 'ex_bench_press_barbell', 'Seleção não pode ignorar proibição.');
     assert(!result.selectedExercise.nome.toLowerCase().includes('supino reto com halteres'), 'Seleção não pode ignorar proibição por nome.');
     console.log('✓ Seleção respeita proibições por ID e nome');
@@ -65,7 +91,25 @@ function runWorkoutEngineV2Tests() {
     assert(program.targetWeeklyVolumeMap, 'Programa deve expor alvo teórico de volume.');
     assert(program.weeklyVolumeMap, 'Programa deve expor volume efetivamente prescrito.');
     assert(Array.isArray(program.generationWarnings), 'Programa deve expor warnings de geração.');
-    console.log('✓ Separação entre alvo teórico, volume real e alertas');
+    assert(program.splitDays.every((day) => day.systemicFatigueScore >= 0 && day.systemicFatigueScore <= 100), 'Fadiga sistêmica deve permanecer em 0–100.');
+    console.log('✓ Volume real, alvo teórico, fadiga e alertas');
+  }
+
+  {
+    const baseline = generateFullBodyWorkout(buildProfile());
+    const repeatedIds = baseline.splitDays[0].items.slice(0, 2).map((item) => item.exercise.id);
+    const logs = [
+      makeLog(repeatedIds, '2026-09-02T10:00:00.000Z'),
+      makeLog(repeatedIds, '2026-09-01T10:00:00.000Z'),
+      makeLog(repeatedIds, '2026-08-31T10:00:00.000Z'),
+      makeLog(repeatedIds, '2026-08-30T10:00:00.000Z'),
+    ];
+    const adapted = generateFullBodyWorkout(buildProfile(), logs);
+    const adaptedIds = new Set(adapted.splitDays.flatMap((day) => day.items.map((item) => item.exercise.id)));
+    assert(adapted.splitDays.every((day) => day.items.every((item) => item.targetSets >= 2)), 'Rotação histórica não pode criar prescrição sem séries.');
+    assert(adapted.generationWarnings?.some((warning) => warning.includes('rotacionados')), 'Histórico repetido deve gerar evidência de rotação.');
+    assert(adaptedIds.size === adapted.splitDays.flatMap((day) => day.items).length, 'A rotação deve preservar unicidade de exercícios no programa sempre que o catálogo permitir.');
+    console.log('✓ Histórico recente influencia a rotação sem alterar a metodologia');
   }
 
   console.log('✓ TODOS OS TESTES DO WORKOUT ENGINE ADAPTATIVO PASSARAM');
