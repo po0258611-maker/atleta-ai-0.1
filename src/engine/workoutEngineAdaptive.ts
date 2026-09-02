@@ -124,6 +124,52 @@ function extractRecentExerciseIds(context: WorkoutLog[] | Set<string>): Set<stri
   return ids;
 }
 
+function ensureProgramUniqueness(program: FullBodyProgram): string[] {
+  const usedIds = new Set<string>();
+  const repaired: string[] = [];
+
+  for (const day of program.splitDays) {
+    for (const item of day.items) {
+      const currentId = item.exercise.id;
+      if (!usedIds.has(currentId)) {
+        usedIds.add(currentId);
+        continue;
+      }
+
+      try {
+        const blockedIds = new Set(usedIds);
+        blockedIds.add(currentId);
+        const repairProfile: UserProfile = {
+          ...program.profile,
+          forbiddenExercises: Array.from(
+            new Set([...program.profile.forbiddenExercises, ...blockedIds]),
+          ),
+        };
+        const result = selectExerciseForPattern(item.exercise.padraoMotor, repairProfile, usedIds);
+
+        if (
+          result.selectedExercise.padraoMotor !== item.exercise.padraoMotor ||
+          blockedIds.has(result.selectedExercise.id)
+        ) {
+          continue;
+        }
+
+        const previousName = item.exercise.nome;
+        item.exercise = result.selectedExercise;
+        item.originalExercise = result.originalExercise || item.originalExercise;
+        item.isReplaced = true;
+        item.replacementNotes = result.replacementNotes || `Substituído para preservar unicidade após ${previousName}.`;
+        usedIds.add(result.selectedExercise.id);
+        repaired.push(`${previousName} → ${result.selectedExercise.nome}`);
+      } catch {
+        // Keep the valid base exercise when no safe same-pattern alternative exists.
+      }
+    }
+  }
+
+  return repaired;
+}
+
 function rotateRecentExercises(
   program: FullBodyProgram,
   recentExerciseIds: Set<string>,
@@ -152,7 +198,6 @@ function rotateRecentExercises(
         };
         const result = selectExerciseForPattern(item.exercise.padraoMotor, rotationProfile, usedIds);
 
-        // Historical rotation is allowed only when we preserve the original movement pattern.
         if (
           result.selectedExercise.padraoMotor !== item.exercise.padraoMotor ||
           blockedRecentIds.has(result.selectedExercise.id) ||
@@ -185,6 +230,7 @@ export function generateFullBodyWorkout(
 ): FullBodyProgram {
   const recentExerciseIds = extractRecentExerciseIds(recentContext);
   const base = generateV2(rawProfile);
+  const uniquenessRepairs = ensureProgramUniqueness(base);
   const rotation = rotateRecentExercises(base, recentExerciseIds);
   const target = base.targetWeeklyVolumeMap || base.weeklyVolumeMap;
   const priorities = base.profile.priorities || [];
@@ -200,6 +246,9 @@ export function generateFullBodyWorkout(
   }));
 
   const warnings = [...(base.generationWarnings || [])];
+  if (uniquenessRepairs.length > 0) {
+    warnings.push(`Catálogo duplicado normalizado: ${uniquenessRepairs.length} exercício(s) foram substituídos por alternativas seguras do mesmo padrão.`);
+  }
   if (rotation.rotated.length > 0) {
     warnings.push(`Histórico recente: ${rotation.rotated.length} exercício(s) rotacionado(s) para aumentar variedade sem alterar os padrões do Full Body.`);
   }
