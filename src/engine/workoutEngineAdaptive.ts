@@ -124,6 +124,14 @@ function extractRecentExerciseIds(context: WorkoutLog[] | Set<string>): Set<stri
   return ids;
 }
 
+function selectionPattern(item: WorkoutItem) {
+  if (item.exercise.categoria === 'isolation') {
+    if (['biceps', 'triceps', 'ombros'].includes(item.exercise.grupoMuscular)) return 'isolation_upper' as const;
+    if (['posteriores', 'gluteos', 'panturrilhas'].includes(item.exercise.grupoMuscular)) return 'isolation_lower' as const;
+  }
+  return item.exercise.padraoMotor;
+}
+
 function ensureProgramUniqueness(program: FullBodyProgram): string[] {
   const usedIds = new Set<string>();
   const repaired: string[] = [];
@@ -145,14 +153,9 @@ function ensureProgramUniqueness(program: FullBodyProgram): string[] {
             new Set([...program.profile.forbiddenExercises, ...blockedIds]),
           ),
         };
-        const result = selectExerciseForPattern(item.exercise.padraoMotor, repairProfile, usedIds);
+        const result = selectExerciseForPattern(selectionPattern(item), repairProfile, usedIds);
 
-        if (
-          result.selectedExercise.padraoMotor !== item.exercise.padraoMotor ||
-          blockedIds.has(result.selectedExercise.id)
-        ) {
-          continue;
-        }
+        if (blockedIds.has(result.selectedExercise.id)) continue;
 
         const previousName = item.exercise.nome;
         item.exercise = result.selectedExercise;
@@ -196,14 +199,13 @@ function rotateRecentExercises(
             new Set([...program.profile.forbiddenExercises, ...blockedIds]),
           ),
         };
-        const result = selectExerciseForPattern(item.exercise.padraoMotor, rotationProfile, usedIds);
+        const result = selectExerciseForPattern(selectionPattern(item), rotationProfile, usedIds);
 
         if (
-          result.selectedExercise.padraoMotor !== item.exercise.padraoMotor ||
           blockedRecentIds.has(result.selectedExercise.id) ||
           usedIds.has(result.selectedExercise.id)
         ) {
-          limited.push(`${item.exercise.nome} (${item.exercise.padraoMotor})`);
+          limited.push(`${item.exercise.nome} (${selectionPattern(item)})`);
           continue;
         }
 
@@ -215,7 +217,7 @@ function rotateRecentExercises(
         usedIds.add(result.selectedExercise.id);
         rotated.push(`${previousName} → ${result.selectedExercise.nome}`);
       } catch {
-        limited.push(`${item.exercise.nome} (${item.exercise.padraoMotor})`);
+        limited.push(`${item.exercise.nome} (${selectionPattern(item)})`);
         // Keep the valid base exercise when no safe alternative exists.
       }
     }
