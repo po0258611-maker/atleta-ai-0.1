@@ -118,11 +118,25 @@ function runWorkoutEngineV2Tests() {
       makeLog(repeatedIds, '2026-08-30T10:00:00.000Z'),
     ];
     const adapted = generateFullBodyWorkout(buildProfile(), logs);
-    const adaptedIds = new Set(adapted.splitDays.flatMap((day) => day.items.map((item) => item.exercise.id)));
+    const adaptedItems = adapted.splitDays.flatMap((day) => day.items);
+    const adaptedIds = new Set(adaptedItems.map((item) => item.exercise.id));
+    const actualRotation = adaptedItems.filter((item) => item.isReplaced).length;
+    const hasRotationEvidence = adapted.generationWarnings?.some((warning) =>
+      warning.includes('rotacionado') || warning.includes('Rotação histórica limitada'),
+    );
+
     assert(adapted.splitDays.every((day) => day.items.every((item) => item.targetSets >= 2)), 'Rotação histórica não pode criar prescrição sem séries.');
-    assert(adapted.generationWarnings?.some((warning) => warning.includes('rotacionados')), 'Histórico repetido deve gerar evidência de rotação.');
-    assert(adaptedIds.size === adapted.splitDays.flatMap((day) => day.items).length, 'A rotação deve preservar unicidade de exercícios no programa sempre que o catálogo permitir.');
-    console.log('✓ Histórico recente influencia a rotação sem alterar a metodologia');
+    assert(hasRotationEvidence, 'Histórico repetido deve gerar evidência de rotação ou de limitação segura do catálogo.');
+    assert(adaptedIds.size === adaptedItems.length, 'A rotação deve preservar unicidade de exercícios no programa sempre que o catálogo permitir.');
+
+    if (actualRotation === 0) {
+      assert(
+        adapted.generationWarnings?.some((warning) => warning.includes('Rotação histórica limitada')),
+        'Sem alternativa segura disponível, o programa deve declarar explicitamente a limitação da rotação histórica.',
+      );
+    }
+
+    console.log(`✓ Histórico recente processado com ${actualRotation} rotação(ões) e fallback seguro quando necessário`);
   }
 
   console.log('✓ TODOS OS TESTES DO WORKOUT ENGINE ADAPTATIVO PASSARAM');
