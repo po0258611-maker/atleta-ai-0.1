@@ -65,6 +65,19 @@ function runWorkoutEngineV2Tests() {
   }
 
   {
+    const result = selectExerciseForPattern(
+      'squat',
+      buildProfile({ environment: 'home', forbiddenExercises: ['ex_goblet_squat'] }),
+      new Set(),
+    );
+    assert(result.isReplaced, 'Quando o padrão principal não estiver disponível, o motor deve registrar substituição.');
+    assert(result.selectedExercise.id !== 'ex_goblet_squat', 'Fallback nunca pode utilizar exercício proibido.');
+    assert(['bodyweight', 'dumbbell', 'band'].includes(result.selectedExercise.equipamento), 'Fallback doméstico deve respeitar o equipamento disponível.');
+    assert(!result.replacementNotes.toLowerCase().includes('restrições') || result.replacementNotes.length > 0, 'Fallback deve explicar a substituição.');
+    console.log('✓ Fallback seguro para padrão indisponível');
+  }
+
+  {
     const bench = EXERCISE_DATABASE.find((exercise) => exercise.id === 'ex_bench_press_barbell');
     assert(bench, 'Supino de referência precisa existir no catálogo.');
     const result = selectExerciseForPattern(
