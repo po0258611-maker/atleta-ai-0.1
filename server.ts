@@ -94,6 +94,7 @@ async function startServer() {
   app.use("/api/auth", authRouter);
   app.use("/api/entitlements", entitlementRouter);
   app.use("/api/subscriptions", subscriptionRouter);
+  app.use("/api/billing", subscriptionRouter);
   app.use("/api/database", databaseRouter);
   app.use("/api", aiRouter);
   app.use(errorHandler);

@@ -22,6 +22,7 @@ subscriptionRouter.post('/webhooks/:provider', handlePaymentWebhook);
 
 // Payment Intents & Orders (Requires Firebase Auth Bearer Token)
 subscriptionRouter.post('/create-intent', requireAuth, handleCreatePaymentIntent);
+subscriptionRouter.post('/checkout', requireAuth, handleCreatePaymentIntent);
 subscriptionRouter.get('/status/mercadopago/:transactionId', requireAuth, handleMercadoPagoPaymentStatus);
 subscriptionRouter.get('/status/:transactionId', requireAuth, handleCheckPaymentStatus);
 subscriptionRouter.get('/history', requireAuth, handleGetSubscriptionHistory);
