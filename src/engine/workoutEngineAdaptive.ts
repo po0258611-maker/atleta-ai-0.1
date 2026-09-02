@@ -1,4 +1,4 @@
-import { FullBodyProgram, MuscleGroup, WorkoutItem } from '../types';
+import { FullBodyProgram, MuscleGroup, WorkoutItem, WorkoutDay } from '../types';
 import { generateFullBodyWorkout as generateV2 } from './workoutEngineV2';
 
 const MUSCLES: MuscleGroup[] = [
@@ -33,13 +33,32 @@ function parseRepMidpoint(range: string): number {
 
 function estimateMinutes(items: WorkoutItem[]): number {
   const transition = Math.max(0, items.length - 1) * 60;
-  const work = items.reduce((sum, item) => sum + item.targetSets * clamp(parseRepMidpoint(item.targetReps) * 3.5, 20, 60), 0);
-  const rest = items.reduce((sum, item) => sum + Math.max(0, item.targetSets - 1) * item.targetRestSec, 0);
+  const work = items.reduce(
+    (sum, item) => sum + item.targetSets * clamp(parseRepMidpoint(item.targetReps) * 3.5, 20, 60),
+    0,
+  );
+  const rest = items.reduce(
+    (sum, item) => sum + Math.max(0, item.targetSets - 1) * item.targetRestSec,
+    0,
+  );
   const warmup = items.length ? 300 : 0;
   return Math.ceil((transition + work + rest + warmup) / 60);
 }
 
-function rebalanceDay(dayItems: WorkoutItem[], target: Record<MuscleGroup, number>, priorities: MuscleGroup[], budget: number): WorkoutItem[] {
+function systemicFatigue(items: WorkoutItem[]): number {
+  if (items.length === 0) return 0;
+  const weighted = items.reduce((sum, item) => sum + item.exercise.fatigueIndex * item.targetSets, 0);
+  const maximum = items.reduce((sum, item) => sum + 5 * item.targetSets, 0);
+  return clamp(Math.round((weighted / Math.max(1, maximum)) * 100), 0, 100);
+}
+
+function rebalanceDay(
+  dayItems: WorkoutItem[],
+  target: Record<MuscleGroup, number>,
+  priorities: MuscleGroup[],
+  budget: number,
+  timeLimit: number,
+): WorkoutItem[] {
   const frequency = EMPTY();
   dayItems.forEach((item) => { frequency[item.exercise.grupoMuscular] += 1; });
 
@@ -51,7 +70,7 @@ function rebalanceDay(dayItems: WorkoutItem[], target: Record<MuscleGroup, numbe
     return { ...item, targetSets: desired };
   });
 
-  const reductionOrder = [...items].sort((a, b) => {
+  const reductionOrder = () => [...items].sort((a, b) => {
     const aPriority = priorities.includes(a.exercise.grupoMuscular) ? 1 : 0;
     const bPriority = priorities.includes(b.exercise.grupoMuscular) ? 1 : 0;
     const aIsolation = a.exercise.categoria === 'isolation' ? 0 : 1;
@@ -59,35 +78,56 @@ function rebalanceDay(dayItems: WorkoutItem[], target: Record<MuscleGroup, numbe
     return aPriority - bPriority || aIsolation - bIsolation || b.exercise.fatigueIndex - a.exercise.fatigueIndex;
   });
 
-  let totalSets = items.reduce((sum, item) => sum + item.targetSets, 0);
-  while (totalSets > budget) {
-    const candidate = reductionOrder.find((item) => item.targetSets > 2 && items.includes(item));
-    if (!candidate) break;
-    candidate.targetSets -= 1;
-    totalSets -= 1;
-  }
+  const reduceUntil = (shouldReduce: () => boolean) => {
+    let guard = 0;
+    while (shouldReduce() && guard < 100) {
+      const candidate = reductionOrder().find((item) => item.targetSets > 2);
+      if (!candidate) break;
+      candidate.targetSets -= 1;
+      guard += 1;
+    }
+  };
+
+  reduceUntil(() => items.reduce((sum, item) => sum + item.targetSets, 0) > budget);
+  reduceUntil(() => estimateMinutes(items) > timeLimit && items.some((item) => item.targetSets > 2));
 
   return items;
+}
+
+function rebuildDay(day: WorkoutDay, items: WorkoutItem[]): WorkoutDay {
+  return {
+    ...day,
+    items,
+    estimatedTimeMin: estimateMinutes(items),
+    systemicFatigueScore: systemicFatigue(items),
+  };
 }
 
 export function generateFullBodyWorkout(rawProfile: Parameters<typeof generateV2>[0]): FullBodyProgram {
   const base = generateV2(rawProfile);
   const target = base.targetWeeklyVolumeMap || base.weeklyVolumeMap;
   const priorities = base.profile.priorities || [];
-
-  const splitDays = base.splitDays.map((day) => ({
-    ...day,
-    items: rebalanceDay(day.items, target, priorities, sessionBudget(base.profile.timePerSessionMin)),
-  }));
+  const budget = sessionBudget(base.profile.timePerSessionMin);
+  const splitDays = base.splitDays.map((day) => {
+    const rebalanced = rebalanceDay(
+      day.items,
+      target,
+      priorities,
+      budget,
+      base.profile.timePerSessionMin,
+    );
+    return rebuildDay(day, rebalanced);
+  });
 
   const weeklyVolumeMap = EMPTY();
   const frequencyMap = EMPTY();
   const generationWarnings = [...(base.generationWarnings || [])];
 
   splitDays.forEach((day) => {
-    const estimated = estimateMinutes(day.items);
-    if (estimated > base.profile.timePerSessionMin + 10) {
-      generationWarnings.push(`Sessão ${day.id} estimada em ${estimated} min, acima da janela de ${base.profile.timePerSessionMin} min.`);
+    if (day.estimatedTimeMin > base.profile.timePerSessionMin) {
+      generationWarnings.push(
+        `Sessão ${day.id} estimada em ${day.estimatedTimeMin} min, acima da janela de ${base.profile.timePerSessionMin} min mesmo após ajuste de séries.`,
+      );
     }
 
     day.items.forEach((item) => {
