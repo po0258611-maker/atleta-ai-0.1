@@ -127,11 +127,12 @@ function extractRecentExerciseIds(context: WorkoutLog[] | Set<string>): Set<stri
 function rotateRecentExercises(
   program: FullBodyProgram,
   recentExerciseIds: Set<string>,
-): string[] {
-  if (recentExerciseIds.size === 0) return [];
+): { rotated: string[]; limited: string[] } {
+  if (recentExerciseIds.size === 0) return { rotated: [], limited: [] };
 
   const usedIds = new Set<string>();
   const rotated: string[] = [];
+  const limited: string[] = [];
 
   for (const day of program.splitDays) {
     for (const item of day.items) {
@@ -155,6 +156,7 @@ function rotateRecentExercises(
           result.selectedExercise.padraoMotor !== item.exercise.padraoMotor ||
           blockedRecentIds.has(result.selectedExercise.id)
         ) {
+          limited.push(`${item.exercise.nome} (${item.exercise.padraoMotor})`);
           continue;
         }
 
@@ -166,12 +168,13 @@ function rotateRecentExercises(
         usedIds.add(result.selectedExercise.id);
         rotated.push(`${previousName} → ${result.selectedExercise.nome}`);
       } catch {
+        limited.push(`${item.exercise.nome} (${item.exercise.padraoMotor})`);
         // Keep the valid base exercise when no safe alternative exists.
       }
     }
   }
 
-  return rotated;
+  return { rotated, limited };
 }
 
 export function generateFullBodyWorkout(
@@ -180,7 +183,7 @@ export function generateFullBodyWorkout(
 ): FullBodyProgram {
   const recentExerciseIds = extractRecentExerciseIds(recentContext);
   const base = generateV2(rawProfile);
-  const rotated = rotateRecentExercises(base, recentExerciseIds);
+  const rotation = rotateRecentExercises(base, recentExerciseIds);
   const target = base.targetWeeklyVolumeMap || base.weeklyVolumeMap;
   const priorities = base.profile.priorities || [];
 
@@ -195,8 +198,11 @@ export function generateFullBodyWorkout(
   }));
 
   const warnings = [...(base.generationWarnings || [])];
-  if (rotated.length > 0) {
-    warnings.push(`Histórico recente: ${rotated.length} exercício(s) rotacionado(s) para aumentar variedade sem alterar os padrões do Full Body.`);
+  if (rotation.rotated.length > 0) {
+    warnings.push(`Histórico recente: ${rotation.rotated.length} exercício(s) rotacionado(s) para aumentar variedade sem alterar os padrões do Full Body.`);
+  }
+  if (rotation.limited.length > 0) {
+    warnings.push(`Rotação histórica limitada: ${rotation.limited.length} exercício(s) recente(s) permaneceram por falta de alternativa segura dentro do catálogo e das restrições atuais.`);
   }
 
   for (const day of splitDays) {
