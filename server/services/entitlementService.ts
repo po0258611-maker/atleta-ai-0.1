@@ -27,11 +27,6 @@ export interface UserPlanResolution {
 }
 
 export class EntitlementService {
-  /**
-   * Resolves plan strictly based on server-side database status.
-   * Single Source of Truth: The backend determines userId, plan, status, entitlements, quotas.
-   * Never trusts client headers or requests.
-   */
   async resolveUserPlan(userId: string): Promise<UserPlanResolution> {
     const sub = await subscriptionServerRepository.findByUserId(userId);
 
@@ -48,9 +43,8 @@ export class EntitlementService {
     const rawStatus = normalizeSubscriptionStatus(sub.status);
     const now = Date.now();
     const periodEnd = new Date(sub.currentPeriodEnd).getTime();
-    const isExpired = isNaN(periodEnd) ? true : periodEnd < now;
+    const isExpired = Number.isNaN(periodEnd) || periodEnd < now;
 
-    // 1. If explicit EXPIRED or time has elapsed past periodEnd
     if (rawStatus === 'EXPIRED' || (isExpired && rawStatus !== 'FREE')) {
       return {
         plan: PLAN_DEFINITIONS.FREE,
@@ -61,7 +55,6 @@ export class EntitlementService {
       };
     }
 
-    // 2. If status is PAST_DUE (e.g. failed charge/invoice)
     if (rawStatus === 'PAST_DUE') {
       return {
         plan: PLAN_DEFINITIONS.FREE,
@@ -72,9 +65,7 @@ export class EntitlementService {
       };
     }
 
-    // 3. If status is CANCELED
     if (rawStatus === 'CANCELED') {
-      // If user canceled but still has active grace period until periodEnd
       if (sub.cancelAtPeriodEnd && !isExpired) {
         const activePlan = PLAN_DEFINITIONS[sub.planId] || PLAN_DEFINITIONS.FREE;
         return {
@@ -86,7 +77,6 @@ export class EntitlementService {
         };
       }
 
-      // Immediate cancellation or period ended
       return {
         plan: PLAN_DEFINITIONS.FREE,
         isFallback: true,
@@ -96,7 +86,6 @@ export class EntitlementService {
       };
     }
 
-    // 4. If status is ACTIVE or TRIAL
     if (rawStatus === 'ACTIVE' || rawStatus === 'TRIAL') {
       const activePlan = PLAN_DEFINITIONS[sub.planId] || PLAN_DEFINITIONS.FREE;
       const isEntitled = activePlan.slug !== 'FREE' && !isExpired;
@@ -110,7 +99,6 @@ export class EntitlementService {
       };
     }
 
-    // 5. Default fallback to FREE
     return {
       plan: PLAN_DEFINITIONS.FREE,
       isFallback: true,
@@ -120,11 +108,8 @@ export class EntitlementService {
     };
   }
 
-  /**
-   * Evaluates feature access against plan rules and usage quotas
-   */
   async evaluateAccess(userId: string, feature: FeatureKey): Promise<AccessEvaluation> {
-    const { plan, status, isEntitled } = await this.resolveUserPlan(userId);
+    const { plan, status } = await this.resolveUserPlan(userId);
     const featureRule = plan.features[feature];
 
     if (!featureRule || !featureRule.enabled) {
@@ -138,7 +123,6 @@ export class EntitlementService {
       };
     }
 
-    // Unlimited check (-1)
     if (featureRule.monthlyLimit === -1) {
       const currentUsage = await usageRepository.getMonthlyUsage(userId, feature);
       return {
@@ -151,7 +135,6 @@ export class EntitlementService {
       };
     }
 
-    // Capped check (>0)
     const currentUsage = await usageRepository.getMonthlyUsage(userId, feature);
     if (currentUsage >= featureRule.monthlyLimit) {
       return {
@@ -174,10 +157,11 @@ export class EntitlementService {
     };
   }
 
-  /**
-   * Atomically checks quota and consumes feature usage in a single transaction
-   */
   async consumeFeature(userId: string, feature: FeatureKey, delta: number = 1): Promise<AccessEvaluation> {
+    if (!Number.isInteger(delta) || delta <= 0) {
+      throw new Error('delta must be a positive integer');
+    }
+
     const { plan, status } = await this.resolveUserPlan(userId);
     const featureRule = plan.features[feature];
 
@@ -192,12 +176,11 @@ export class EntitlementService {
       };
     }
 
-    // Operação Atômica no Firestore com verificação e incremento sob transação
     const result = await usageRepository.consumeAtomic(
       userId,
       feature,
       featureRule.monthlyLimit,
-      delta
+      delta,
     );
 
     if (!result.success) {
@@ -221,9 +204,6 @@ export class EntitlementService {
     };
   }
 
-  /**
-   * Authoritative Single Source of Truth Summary for user subscription & entitlements
-   */
   async getEntitlementsSummary(userId: string) {
     const { plan, status, isEntitled, subscription } = await this.resolveUserPlan(userId);
     const featuresSummary: Record<string, unknown> = {};
@@ -248,7 +228,7 @@ export class EntitlementService {
       planSlug: plan.slug,
       planName: plan.name,
       status,
-      subscriptionStatus: status.toLowerCase(), // For backward compatibility with clients checking 'active'
+      subscriptionStatus: status.toLowerCase(),
       canonicalStatus: status,
       isSubscribed: isEntitled,
       isPremium: isEntitled && (plan.slug === 'PRO' || plan.slug === 'APEX_ELITE'),
@@ -268,9 +248,6 @@ export class EntitlementService {
     };
   }
 
-  /**
-   * Authoritative Subscription Cancellation
-   */
   async cancelSubscription(userId: string, immediate: boolean = false): Promise<ServerSubscription | null> {
     const sub = await subscriptionServerRepository.findByUserId(userId);
     if (!sub) return null;
@@ -278,8 +255,10 @@ export class EntitlementService {
     const nowIso = new Date().toISOString();
     const updatedSub: ServerSubscription = {
       ...sub,
-      status: immediate ? 'CANCELED' : sub.status,
-      cancelAtPeriodEnd: true,
+      // Immediate cancellation must revoke entitlement now. A period-end
+      // cancellation keeps the paid entitlement until currentPeriodEnd.
+      status: 'CANCELED',
+      cancelAtPeriodEnd: !immediate,
       canceledAt: nowIso,
       autoRenew: false,
       updatedAt: nowIso,
@@ -290,9 +269,6 @@ export class EntitlementService {
     return saved;
   }
 
-  /**
-   * Authoritative Subscription Reactivation
-   */
   async reactivateSubscription(userId: string): Promise<ServerSubscription | null> {
     const sub = await subscriptionServerRepository.findByUserId(userId);
     if (!sub) return null;
@@ -312,9 +288,6 @@ export class EntitlementService {
     return saved;
   }
 
-  /**
-   * Authoritative Plan Change (Upgrade / Downgrade)
-   */
   async changePlan(userId: string, newPlanSlug: PlanSlug): Promise<ServerSubscription | null> {
     const sub = await subscriptionServerRepository.findByUserId(userId);
     const targetPlan = PLAN_DEFINITIONS[newPlanSlug];
@@ -347,10 +320,11 @@ export class EntitlementService {
     return saved;
   }
 
-  /**
-   * Authoritative Renewal (e.g. monthly billing cycle execution)
-   */
   async renewSubscription(userId: string, durationDays: number = 30): Promise<ServerSubscription | null> {
+    if (!Number.isInteger(durationDays) || durationDays <= 0 || durationDays > 366) {
+      throw new Error('durationDays must be an integer between 1 and 366');
+    }
+
     const sub = await subscriptionServerRepository.findByUserId(userId);
     if (!sub) return null;
 
@@ -379,4 +353,3 @@ export class EntitlementService {
 }
 
 export const entitlementService = new EntitlementService();
-
