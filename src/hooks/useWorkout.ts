@@ -21,6 +21,14 @@ export const INITIAL_PROFILE: UserProfile = {
   stressLevel: 'moderate',
 };
 
+function normalizeWorkoutLog(log: WorkoutLog): WorkoutLog {
+  const parsed = new Date(log.date);
+  return {
+    ...log,
+    date: Number.isNaN(parsed.getTime()) ? new Date().toISOString() : parsed.toISOString(),
+  };
+}
+
 export function useWorkout(userId?: string) {
   const [userProfile, setUserProfile] = useState<UserProfile>(INITIAL_PROFILE);
   const [program, setProgram] = useState<FullBodyProgram>(() =>
@@ -43,12 +51,16 @@ export function useWorkout(userId?: string) {
           FirestoreDataService.getWorkoutLogs(userId),
         ]);
 
-        setWorkoutLogs(remoteLogs);
+        const normalizedLogs = remoteLogs
+          .map(normalizeWorkoutLog)
+          .sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
+
+        setWorkoutLogs(normalizedLogs);
 
         if (remoteProgram) {
           setProgram(remoteProgram);
         } else {
-          const initialProg = generateFullBodyWorkout(effectiveProfile, remoteLogs);
+          const initialProg = generateFullBodyWorkout(effectiveProfile, normalizedLogs);
           setProgram(initialProg);
           await FirestoreDataService.saveActiveWorkout(userId, initialProg);
         }
@@ -76,9 +88,9 @@ export function useWorkout(userId?: string) {
   };
 
   const handleSaveWorkoutLog = async (newLog: WorkoutLog) => {
-    const nextLogs = [newLog, ...workoutLogs];
-    setWorkoutLogs(nextLogs);
-    if (userId) await FirestoreDataService.saveWorkoutLog(userId, newLog);
+    const normalizedLog = normalizeWorkoutLog(newLog);
+    setWorkoutLogs((previous) => [normalizedLog, ...previous]);
+    if (userId) await FirestoreDataService.saveWorkoutLog(userId, normalizedLog);
   };
 
   return {
