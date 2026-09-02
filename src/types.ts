@@ -18,6 +18,7 @@ export interface SubscriptionState {
   lastPaymentDate?: string;
   pixQrCodeUrl?: string;
   pixCopiaECola?: string;
+  lastPaymentDate?: string;
 }
 
 export type MuscleGroup =
@@ -51,7 +52,7 @@ export interface ExerciseReplacement {
   replacementId: string;
   replacementName: string;
   condition: GymEnvironment | 'injury' | 'preference';
-  equivalenceScore: number; // 0 to 100
+  equivalenceScore: number;
   notes: string;
 }
 
@@ -73,10 +74,10 @@ export interface Exercise {
   dicaPrincipal?: string;
   respiracao: string;
   amplitude: string;
-  cadencia: string; // e.g. "3-0-1-0"
-  rir: number; // Reps In Reserve (e.g. 2 = 2 reps left)
-  rpe: number; // Rate of Perceived Exertion (e.g. 8)
-  descanso: number; // Rest in seconds (e.g. 120)
+  cadencia: string;
+  rir: number;
+  rpe: number;
+  descanso: number;
   video?: string;
   youtubeVideoId?: string;
   videoUrlMp4?: string;
@@ -86,7 +87,7 @@ export interface Exercise {
   errosComuns: string[];
   variacoes: string[];
   substitutos: ExerciseReplacement[];
-  fatigueIndex: number; // 1 (low) to 5 (extreme CNS/spinal axial fatigue)
+  fatigueIndex: number;
   isFavorite?: boolean;
 }
 
@@ -119,9 +120,9 @@ export interface PrescriptionRule {
 export interface WorkoutItem {
   id: string;
   exercise: Exercise;
-  originalExercise?: Exercise; // In case of replacement
+  originalExercise?: Exercise;
   targetSets: number;
-  targetReps: string; // e.g. "6-8" or "8-12" or "12-15"
+  targetReps: string;
   targetRIR: number;
   targetRPE: number;
   targetRestSec: number;
@@ -147,9 +148,13 @@ export interface FullBodyProgram {
   profile: UserProfile;
   methodology: 'FULL_BODY';
   splitDays: WorkoutDay[];
+  /** Target before exercise/session constraints are applied. */
+  targetWeeklyVolumeMap?: Record<MuscleGroup, number>;
+  /** Actual direct + weighted indirect volume produced by the plan. */
   weeklyVolumeMap: Record<MuscleGroup, number>;
   frequencyMap: Record<MuscleGroup, number>;
   prescriptionRationale: string[];
+  generationWarnings?: string[];
   aiAnalysis?: string;
 }
 
@@ -176,7 +181,7 @@ export interface WorkoutLog {
 }
 
 export interface FatigueAssessment {
-  currentFatigueScore: number; // 0 to 100
+  currentFatigueScore: number;
   status: 'optimal' | 'moderate' | 'high_fatigue' | 'deload_recommended';
   volumeAccumulation: number;
   intensityFactor: number;
