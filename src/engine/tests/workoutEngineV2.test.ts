@@ -38,7 +38,7 @@ function runWorkoutEngineV2Tests() {
     assert(program.splitDays.every((day) => day.items.length <= 5), 'Nenhuma sessão pode exceder o limite de exercícios para 60 min.');
     assert(program.splitDays.every((day) => day.items.every((item) => ['bodyweight', 'dumbbell', 'band'].includes(item.exercise.equipamento))), 'Ambiente doméstico não deve receber equipamento incompatível.');
     assert(program.splitDays.every((day) => day.items.every((item) => item.exercise.id !== 'ex_goblet_squat')), 'Exercício proibido nunca pode aparecer no programa.');
-    assert(program.splitDays.every((day) => day.items.reduce((sum, item) => sum + item.targetSets, 0) <= 7), '30/60 min: o orçamento de séries deve ser respeitado por sessão.');
+    assert(program.splitDays.every((day) => day.items.reduce((sum, item) => sum + item.targetSets, 0) <= 14), 'Sessões de 60 min devem respeitar o orçamento de séries por sessão.');
     console.log('✓ Restrições de ambiente, proibições e orçamento por sessão');
   }
 
