@@ -4,7 +4,7 @@ import { Exercise, MuscleGroup } from '../types';
  * Public image root. Using Vite's BASE_URL keeps images working when the app
  * is served from a sub-path (for example, an embedded preview/workspace).
  */
-const PUBLIC_BASE_URL = (import.meta.env.BASE_URL || '/').replace(/\/$/, '');
+const PUBLIC_BASE_URL = (typeof import.meta !== 'undefined' && (import.meta as any).env?.BASE_URL ? (import.meta as any).env.BASE_URL : '/').replace(/\/$/, '');
 
 function publicImagePath(filename: string): string {
   return `${PUBLIC_BASE_URL}/images/${filename}`.replace(/([^:]\/)\/+/g, '$1');
