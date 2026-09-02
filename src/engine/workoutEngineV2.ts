@@ -98,6 +98,22 @@ function isSafeCandidate(exercise: Exercise, profile: UserProfile, forbidden: Se
     && !limitationConflict(exercise, profile.limitations);
 }
 
+function getFallbackPatterns(pattern: MovementPattern | 'isolation_upper' | 'isolation_lower'): Array<MovementPattern | 'isolation_upper' | 'isolation_lower'> {
+  const fallbackMap: Record<MovementPattern | 'isolation_upper' | 'isolation_lower', Array<MovementPattern | 'isolation_upper' | 'isolation_lower'>> = {
+    squat: ['lunge', 'hinge', 'isolation_lower'],
+    hinge: ['squat', 'lunge', 'isolation_lower'],
+    lunge: ['squat', 'hinge', 'isolation_lower'],
+    horizontal_push: ['vertical_push', 'isolation_upper'],
+    horizontal_pull: ['vertical_pull', 'isolation_upper'],
+    vertical_push: ['horizontal_push', 'isolation_upper'],
+    vertical_pull: ['horizontal_pull', 'isolation_upper'],
+    isolation_upper: ['horizontal_push', 'vertical_push', 'horizontal_pull', 'vertical_pull'],
+    isolation_lower: ['squat', 'hinge', 'lunge'],
+    core: ['isolation_lower'],
+  };
+  return fallbackMap[pattern] || [];
+}
+
 function sanitizeProfile(profile: Partial<UserProfile>): UserProfile {
   const availableDays = ([2, 3, 4, 5].includes(profile.availableDays as number) ? profile.availableDays : 4) as 2 | 3 | 4 | 5;
   const timePerSessionMin = ([30, 45, 60, 75, 90].includes(profile.timePerSessionMin as number) ? profile.timePerSessionMin : 60) as 30 | 45 | 60 | 75 | 90;
@@ -259,6 +275,22 @@ export function selectExerciseForPattern(
       };
     }
 
+    for (const fallbackPattern of getFallbackPatterns(pattern)) {
+      const fallbackCandidates = EXERCISE_DATABASE.filter((exercise) =>
+        isSafeCandidate(exercise, profile, forbidden, fallbackPattern),
+      );
+      if (fallbackCandidates.length === 0) continue;
+
+      const fallbackExercise = [...fallbackCandidates]
+        .sort((a, b) => scoreExercise(b, profile, fallbackPattern, usedIds) - scoreExercise(a, profile, fallbackPattern, usedIds))[0];
+
+      return {
+        selectedExercise: fallbackExercise,
+        isReplaced: true,
+        replacementNotes: `Padrão ${pattern} indisponível com as restrições atuais; substituído por ${fallbackPattern} seguro, mantendo as limitações, proibições e o ambiente do usuário.`,
+      };
+    }
+
     throw new Error(`Não existe exercício seguro disponível para o padrão ${pattern} com as restrições atuais.`);
   }
 
@@ -390,6 +422,9 @@ export function generateFullBodyWorkout(rawProfile: UserProfile): FullBodyProgra
     const selected = patterns.map((pattern) => {
       const result = selectExerciseForPattern(pattern, profile, usedIds);
       usedIds.add(result.selectedExercise.id);
+      if (result.isReplaced && result.replacementNotes) {
+        generationWarnings.push(`Sessão ${dayId}: ${result.replacementNotes}`);
+      }
       return {
         exercise: result.selectedExercise,
         originalExercise: result.originalExercise,
