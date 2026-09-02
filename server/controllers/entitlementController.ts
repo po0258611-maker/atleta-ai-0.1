@@ -4,34 +4,30 @@ import { logger } from '../middlewares/logger';
 
 export async function handleGetEntitlements(req: Request, res: Response) {
   try {
-    // Uses strictly validated Firebase UID from token (never trusting body/query from client)
-    const userId = req.athlete?.uid || 'usr_anonymous_demo';
+    // Uses strictly validated Firebase UID from token (never trusting body/query from client).
+    const userId = req.athlete?.uid;
+    if (!userId) {
+      return res.status(401).json({
+        error: { code: 'UNAUTHORIZED', message: 'Sessão de autenticação obrigatória.' },
+      });
+    }
+
     const summary = await entitlementService.getEntitlementsSummary(userId);
     return res.json(summary);
   } catch (error: any) {
-    logger.warn('Aviso: Falha ao obter resumo de entitlements, fornecendo fallback seguro FREE', {
+    logger.error('Falha ao obter resumo de entitlements', {
       userId: req.athlete?.uid,
       error: error?.message,
     });
-    return res.json({
-      userId: req.athlete?.uid || 'usr_anonymous_demo',
-      plan: 'FREE',
-      planSlug: 'FREE',
-      planName: 'Treino MAX Gratuito',
-      status: 'FREE',
-      subscriptionStatus: 'free',
-      canonicalStatus: 'FREE',
-      isSubscribed: false,
-      isPremium: false,
-      startDate: null,
-      currentPeriodStart: null,
-      endDate: null,
-      currentPeriodEnd: null,
-      renewsAt: null,
-      renewAt: null,
-      cancelAtPeriodEnd: false,
-      features: {},
+
+    // Never downgrade a paid user to FREE because of a database/read failure.
+    // The entitlement endpoint is informational; on infrastructure failure it must
+    // fail closed instead of returning a plausible but false subscription state.
+    return res.status(503).json({
+      error: {
+        code: 'ENTITLEMENT_SERVICE_UNAVAILABLE',
+        message: 'Não foi possível consultar o estado da assinatura neste momento.',
+      },
     });
   }
 }
-

@@ -3,6 +3,7 @@ import { UserProfile, FullBodyProgram, SubscriptionState, WorkoutLog } from '../
 import { askAICoach } from '../engine/aiCoachEngine';
 import { FeaturePermissions, PermissionService } from '../services/permissionService';
 import { ProgressionEngine, IntelligentGoalTarget } from '../services/progressionEngine';
+import { apiRequest } from '../api/apiClient';
 import { 
   MessageSquare, 
   Send, 
@@ -38,6 +39,17 @@ interface ChatMessage {
   time: string;
 }
 
+interface EntitlementSummary {
+  planSlug?: string;
+  planName?: string;
+  features?: Record<string, {
+    enabled?: boolean;
+    limit?: number;
+    used?: number;
+    remaining?: number;
+  }>;
+}
+
 export const AICoachView: React.FC<AICoachViewProps> = ({
   profile,
   program,
@@ -53,12 +65,38 @@ export const AICoachView: React.FC<AICoachViewProps> = ({
 
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
-  const [queryCount, setQueryCount] = useState<number>(0);
+  const [queryUsage, setQueryUsage] = useState<number>(0);
+  const [queryLimit, setQueryLimit] = useState<number | null>(null);
   const [showGoalsCalculator, setShowGoalsCalculator] = useState<boolean>(false);
 
   const intelligentGoals: IntelligentGoalTarget = useMemo(() => {
     return ProgressionEngine.calculateIntelligentGoals(profile);
   }, [profile]);
+
+  useEffect(() => {
+    let active = true;
+
+    const loadEntitlements = async () => {
+      try {
+        const summary = await apiRequest<EntitlementSummary>('/api/entitlements/me');
+        const aiFeature = summary?.features?.AI_COACH_MESSAGES;
+        if (!active || !aiFeature) return;
+        if (typeof aiFeature.used === 'number' && Number.isFinite(aiFeature.used)) {
+          setQueryUsage(Math.max(0, aiFeature.used));
+        }
+        if (typeof aiFeature.limit === 'number' && Number.isFinite(aiFeature.limit)) {
+          setQueryLimit(aiFeature.limit);
+        }
+      } catch {
+        // The backend remains authoritative. UI simply keeps its last known quota state.
+      }
+    };
+
+    loadEntitlements();
+    return () => {
+      active = false;
+    };
+  }, [subscription]);
 
   const [messages, setMessages] = useState<ChatMessage[]>([
     {
@@ -102,17 +140,6 @@ Como posso orientar seus treinos ou estratégia metabólica hoje?`,
     const promptText = textToSend || inputPrompt;
     if (!promptText.trim() || loading) return;
 
-    // Check query limit for Core Pass users
-    if (!permissions.hasApexPass && queryCount >= permissions.maxKinetixAiQueriesPerDay) {
-      if (onOpenPremiumGate) {
-        onOpenPremiumGate(
-          'Consultas Ilimitadas no KINETIX AI™',
-          `Você atingiu o limite de ${permissions.maxKinetixAiQueriesPerDay} consultas gratuitas por sessão do Treino MAX Core Pass. Assine o Passe APEX para obter acessos ilimitados e sem restrições.`
-        );
-      }
-      return;
-    }
-
     const userMsg: ChatMessage = {
       id: Date.now().toString(),
       sender: 'user',
@@ -123,7 +150,6 @@ Como posso orientar seus treinos ou estratégia metabólica hoje?`,
     setMessages((prev) => [...prev, userMsg]);
     if (!textToSend) setInputPrompt('');
     setLoading(true);
-    setQueryCount((prev) => prev + 1);
 
     try {
       const aiResponseText = await askAICoach(promptText, profile, program, workoutLogs);
@@ -136,13 +162,38 @@ Como posso orientar seus treinos ou estratégia metabólica hoje?`,
       };
 
       setMessages((prev) => [...prev, aiMsg]);
+      setQueryUsage((prev) => prev + 1);
+
+      // Refresh the server-authoritative usage after a successful request.
+      try {
+        const summary = await apiRequest<EntitlementSummary>('/api/entitlements/me');
+        const aiFeature = summary?.features?.AI_COACH_MESSAGES;
+        if (typeof aiFeature?.used === 'number' && Number.isFinite(aiFeature.used)) {
+          setQueryUsage(Math.max(0, aiFeature.used));
+        }
+        if (typeof aiFeature?.limit === 'number' && Number.isFinite(aiFeature.limit)) {
+          setQueryLimit(aiFeature.limit);
+        }
+      } catch {
+        // Keep the optimistic increment when the read-back endpoint is temporarily unavailable.
+      }
     } catch (err: any) {
       let errorMsgText = 'Erro ao processar sua solicitação. Tente novamente em instantes.';
       if (err?.code === 'RATE_LIMIT_EXCEEDED' || err?.status === 429) {
-        const retrySec = err?.retryAfter || 60;
+        const retrySec = Number(err?.retryAfter) > 0 ? Number(err.retryAfter) : 60;
         errorMsgText = `⚠️ **Limite de Requisições Atingido (RATE EXCEEDED)**\n\nVocê enviou muitas mensagens em um curto intervalo de tempo. Por favor, aguarde **${retrySec} segundos** antes de enviar uma nova consulta.`;
-      } else if (err?.code === 'MONTHLY_QUOTA_EXCEEDED' || err?.status === 403) {
+      } else if (err?.code === 'MONTHLY_QUOTA_EXCEEDED') {
+        if (onOpenPremiumGate) {
+          onOpenPremiumGate(
+            'Limite de Uso Atingido',
+            'Sua cota mensal de mensagens de IA foi atingida. Faça upgrade do seu plano para liberar novas mensagens.'
+          );
+        }
         errorMsgText = `⚠️ **Limite de Uso Atingido**\n\nSua cota de mensagens de IA foi atingida para este ciclo. Faça upgrade do seu plano para liberar novas mensagens.`;
+      } else if (err?.status === 403) {
+        errorMsgText = `⚠️ **Acesso não autorizado**\n\nSeu plano ou estado de assinatura não permite esta operação no momento.`;
+      } else if (err?.status === 401) {
+        errorMsgText = `⚠️ **Sessão expirada**\n\nFaça login novamente para continuar usando o KINETIX AI™.`;
       } else if (err?.message) {
         errorMsgText = `⚠️ **Aviso do Sistema**: ${err.message}`;
       }
@@ -160,6 +211,13 @@ Como posso orientar seus treinos ou estratégia metabólica hoje?`,
     }
   };
 
+  const quotaLabel = useMemo(() => {
+    const effectiveLimit = queryLimit ?? (permissions.hasApexPass ? -1 : null);
+    if (effectiveLimit === -1) return 'KINETIX AI™ ILIMITADO';
+    if (effectiveLimit !== null) return `QUOTA CORE PASS: ${queryUsage}/${effectiveLimit} USADAS`;
+    return `KINETIX AI™ — QUOTA VALIDADA PELO SERVIDOR`;
+  }, [queryLimit, queryUsage, permissions.hasApexPass]);
+
   // Helper function to render markdown-style formatted text (bold, lists, code, spacing)
   const renderFormattedText = (text: string) => {
     const lines = text.split('\n');
@@ -168,7 +226,6 @@ Como posso orientar seus treinos ou estratégia metabólica hoje?`,
         {lines.map((line, idx) => {
           if (!line.trim()) return <div key={idx} className="h-2" />;
 
-          // Process bold tags **text**
           const parts = line.split(/(\*\*.*?\*\*)/g);
           const formattedLine = parts.map((part, pIdx) => {
             if (part.startsWith('**') && part.endsWith('**')) {
@@ -177,7 +234,6 @@ Como posso orientar seus treinos ou estratégia metabólica hoje?`,
             return part;
           });
 
-          // Bullet point lines
           if (line.trim().startsWith('- ') || line.trim().startsWith('* ')) {
             return (
               <div key={idx} className="flex items-start space-x-2 pl-2">
@@ -187,7 +243,6 @@ Como posso orientar seus treinos ou estratégia metabólica hoje?`,
             );
           }
 
-          // Numbered list lines
           if (/^\d+\.\s/.test(line.trim())) {
             return (
               <div key={idx} className="flex items-start space-x-2 pl-2">
@@ -225,12 +280,12 @@ Como posso orientar seus treinos ou estratégia metabólica hoje?`,
               {permissions.hasApexPass ? (
                 <>
                   <Zap className="h-3.5 w-3.5 text-rose-400 fill-rose-400" />
-                  <span>KINETIX AI™ ILIMITADO (APEX)</span>
+                  <span>{quotaLabel}</span>
                 </>
               ) : (
                 <>
                   <Lock className="h-3.5 w-3.5 text-amber-400" />
-                  <span>QUOTA CORE PASS: {queryCount}/3 USADAS</span>
+                  <span>{quotaLabel}</span>
                 </>
               )}
             </div>
@@ -398,4 +453,3 @@ Como posso orientar seus treinos ou estratégia metabólica hoje?`,
     </div>
   );
 };
-

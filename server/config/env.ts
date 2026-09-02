@@ -26,6 +26,15 @@ function resolveFirebaseProjectId(): string {
   return process.env.FIREBASE_PROJECT_ID?.trim() || '';
 }
 
+const rateLimitWindowMs = 60 * 1000;
+const configuredRateLimit = Number(process.env.RATE_LIMIT_MAX_REQUESTS);
+const configuredAiRateLimit = Number(process.env.AI_RATE_LIMIT_MAX_REQUESTS);
+const configuredAiRateLimitWindow = Number(process.env.AI_RATE_LIMIT_WINDOW_MS);
+const configuredRateLimitBackend = process.env.RATE_LIMIT_BACKEND?.trim().toLowerCase();
+const rateLimitBackend = configuredRateLimitBackend === 'memory' || configuredRateLimitBackend === 'firestore'
+  ? configuredRateLimitBackend
+  : (isProduction ? 'firestore' : 'memory');
+
 export const SERVER_CONFIG = {
   PORT: port,
   NODE_ENV,
@@ -43,8 +52,11 @@ export const SERVER_CONFIG = {
   STRIPE_WEBHOOK_SECRET: process.env.STRIPE_WEBHOOK_SECRET?.trim() || (isProduction ? '' : 'whsec_test_stripe_secret_key_athleta_ai_2026'),
   PIX_WEBHOOK_SECRET: process.env.PIX_WEBHOOK_SECRET?.trim() || (isProduction ? '' : 'pix_whsec_test_secret_athleta_ai_2026'),
   TRUST_PROXY: process.env.TRUST_PROXY?.trim() === 'true',
-  RATE_LIMIT_WINDOW_MS: 60 * 1000,
-  RATE_LIMIT_MAX_REQUESTS: Math.max(1, Number(process.env.RATE_LIMIT_MAX_REQUESTS) || 300),
+  RATE_LIMIT_BACKEND: rateLimitBackend as 'memory' | 'firestore',
+  RATE_LIMIT_WINDOW_MS: rateLimitWindowMs,
+  RATE_LIMIT_MAX_REQUESTS: Math.max(1, Number.isFinite(configuredRateLimit) ? Math.floor(configuredRateLimit) : 300),
+  AI_RATE_LIMIT_WINDOW_MS: Math.max(1000, Number.isFinite(configuredAiRateLimitWindow) ? Math.floor(configuredAiRateLimitWindow) : rateLimitWindowMs),
+  AI_RATE_LIMIT_MAX_REQUESTS: Math.max(1, Number.isFinite(configuredAiRateLimit) ? Math.floor(configuredAiRateLimit) : 30),
   MAX_PROMPT_LENGTH: Math.max(100, Number(process.env.MAX_PROMPT_LENGTH) || 4000),
 };
 
@@ -64,6 +76,10 @@ export function validateProductionConfig(): void {
     if (SERVER_CONFIG.MERCADOPAGO_ENV !== 'production') {
       throw new Error('MERCADOPAGO_ENV must be "production" when PAYMENT_MODE is "live" in production.');
     }
+  }
+
+  if (SERVER_CONFIG.RATE_LIMIT_BACKEND !== 'firestore') {
+    throw new Error('RATE_LIMIT_BACKEND must be "firestore" in production.');
   }
 
   const missing = Object.entries(required).filter(([, value]) => !value).map(([key]) => key);

@@ -51,7 +51,7 @@ jobs:
           PY
 
       - name: Typecheck
-        run: npm run lint
+        run: npm run typecheck
 
       - name: Build
         run: npm run build
