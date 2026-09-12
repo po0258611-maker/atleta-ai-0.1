@@ -16,7 +16,7 @@
 
 import { SubscriptionServerRepository } from '../repositories/subscriptionServerRepository';
 import { UsageRepository } from '../repositories/usageRepository';
-import { MemoryFirestoreAdapter, IFirestoreAdapter, AdminFirestoreAdapter } from '../repositories/firestoreAdapter';
+import { MemoryFirestoreAdapter, IFirestoreAdapter, AdminFirestoreAdapter, canUseMemoryFallback, isFirestoreUnavailableError } from '../repositories/firestoreAdapter';
 import { ServerSubscription } from '../domain/subscriptionModel';
 import { getAdminFirestore } from '../services/firebaseAdmin';
 
@@ -147,6 +147,169 @@ async function runPersistenceTests() {
   }
   console.assert(usageFailed === true, 'Falha do Firestore não pode ser silenciada na leitura de quota');
   console.log('✓ Teste 10: Tratamento explícito de falha de banco validado (Erros nunca convertidos em acesso livre)');
+
+  // ----------------------------------------------------------------------
+  // STAGE 04: POLÍTICA FAIL-CLOSED DO FIRESTORE (TESTES OBRIGATÓRIOS A-E)
+  // ----------------------------------------------------------------------
+  console.log('--- STAGE 04: TESTES DA POLÍTICA FAIL-CLOSED DO FIRESTORE ---');
+  const envSnapshot = { ...process.env };
+
+  try {
+    // TESTE A: Firestore disponível -> usa Firestore normalmente
+    {
+      const mockCloudDb = {
+        collection: (name: string) => ({
+          doc: (id: string) => ({
+            get: async () => ({ id, exists: true, data: () => ({ name: 'Atleta Cloud Real', source: 'cloud_firestore' }) }),
+            set: async () => {},
+            delete: async () => {},
+          }),
+          where: () => ({ get: async () => ({ empty: false, docs: [] }) }),
+          limit: () => ({ get: async () => ({ empty: false, docs: [] }) }),
+          get: async () => ({ empty: false, docs: [] }),
+        }),
+        runTransaction: async (fn: any) => fn({
+          get: async (_c: string, d: string) => ({ id: d, exists: true, data: () => ({ source: 'cloud_firestore' }) }),
+          set: () => {},
+          delete: () => {},
+        }),
+      };
+
+      const adapterA = new AdminFirestoreAdapter(undefined, mockCloudDb);
+      const snapA = await adapterA.collection('users').doc('user_cloud').get();
+      console.assert(snapA.exists === true, 'TESTE A: Documento deve existir no Firestore');
+      console.assert(snapA.data()?.source === 'cloud_firestore', 'TESTE A: Deve ler diretamente do Firestore disponível');
+      console.log('✓ TESTE A: Firestore disponível -> usa Firestore normalmente');
+    }
+
+    // TESTE B: Firestore indisponível + fallback explicitamente permitido -> usa memória
+    {
+      process.env.NODE_ENV = 'test';
+      process.env.FIRESTORE_ALLOW_MEMORY_FALLBACK = 'true';
+      delete process.env.FIRESTORE_DISABLE_MEMORY_FALLBACK;
+
+      console.assert(canUseMemoryFallback() === true, 'TESTE B: canUseMemoryFallback deve retornar true');
+
+      const unavailableDb = {
+        collection: () => {
+          const err: any = new Error('14 UNAVAILABLE: Could not reach Cloud Firestore backend');
+          err.code = 14;
+          throw err;
+        },
+        runTransaction: async () => {
+          const err: any = new Error('14 UNAVAILABLE: Could not reach Cloud Firestore backend');
+          err.code = 14;
+          throw err;
+        },
+      };
+
+      const fallbackMem = new MemoryFirestoreAdapter();
+      await fallbackMem.collection('users').doc('user_mem').set({ name: 'Atleta Memória', fallbackActive: true });
+
+      const adapterB = new AdminFirestoreAdapter(fallbackMem, unavailableDb);
+      const snapB = await adapterB.collection('users').doc('user_mem').get();
+      console.assert(snapB.exists === true, 'TESTE B: Documento deve ser recuperado do fallback');
+      console.assert(snapB.data()?.fallbackActive === true, 'TESTE B: Deve usar adapter de memória quando fallback explicitamente permitido');
+
+      const txResult = await adapterB.runTransaction(async (tx) => {
+        const doc = await tx.get('users', 'user_mem');
+        return doc.data();
+      });
+      console.assert(txResult?.fallbackActive === true, 'TESTE B: Transação deve usar memória quando permitido');
+      console.log('✓ TESTE B: Firestore indisponível + fallback explicitamente permitido -> usa memória');
+    }
+
+    // TESTE C: Firestore indisponível + fallback não permitido -> NÃO usa memória, retorna/lança erro controlado
+    {
+      process.env.NODE_ENV = 'test';
+      process.env.FIRESTORE_ALLOW_MEMORY_FALLBACK = 'false';
+      delete process.env.FIRESTORE_DISABLE_MEMORY_FALLBACK;
+
+      console.assert(canUseMemoryFallback() === false, 'TESTE C: canUseMemoryFallback deve ser false');
+
+      const unavailableDb = {
+        collection: () => {
+          const err: any = new Error('14 UNAVAILABLE: Could not reach Cloud Firestore backend');
+          err.code = 14;
+          throw err;
+        },
+        runTransaction: async () => {
+          const err: any = new Error('14 UNAVAILABLE: Could not reach Cloud Firestore backend');
+          err.code = 14;
+          throw err;
+        },
+      };
+
+      const fallbackMem = new MemoryFirestoreAdapter();
+      await fallbackMem.collection('users').doc('user_isolated').set({ name: 'Deveria Estar Inacessível' });
+
+      const adapterC = new AdminFirestoreAdapter(fallbackMem, unavailableDb);
+      let threwControlledError = false;
+      try {
+        await adapterC.collection('users').doc('user_isolated').get();
+      } catch (err: any) {
+        threwControlledError = isFirestoreUnavailableError(err);
+      }
+      console.assert(threwControlledError === true, 'TESTE C: Falha do Firestore deve produzir erro controlado e NUNCA usar memória');
+
+      let txThrewError = false;
+      try {
+        await adapterC.runTransaction(async (tx) => tx.get('users', 'user_isolated'));
+      } catch (err: any) {
+        txThrewError = isFirestoreUnavailableError(err);
+      }
+      console.assert(txThrewError === true, 'TESTE C: Transação deve falhar com erro controlado');
+      console.log('✓ TESTE C: Firestore indisponível + fallback não permitido -> NÃO usa memória e lança erro controlado');
+    }
+
+    // TESTE D: Configuração de produção sem variável explícita -> fallback permanece DESABILITADO
+    {
+      process.env.NODE_ENV = 'production';
+      delete process.env.FIRESTORE_ALLOW_MEMORY_FALLBACK;
+      delete process.env.FIRESTORE_DISABLE_MEMORY_FALLBACK;
+
+      console.assert(canUseMemoryFallback() === false, 'TESTE D: Em produção sem variável, canUseMemoryFallback DEVE ser false');
+      console.log('✓ TESTE D: Configuração de produção sem variável explícita -> fallback permanece DESABILITADO');
+    }
+
+    // TESTE E: Configuração inválida do Firestore em produção -> não deve resultar em sucesso falso nem persistência em memória silenciosa
+    {
+      process.env.NODE_ENV = 'production';
+      delete process.env.FIRESTORE_ALLOW_MEMORY_FALLBACK;
+      delete process.env.FIRESTORE_DISABLE_MEMORY_FALLBACK;
+
+      const invalidConfigDb = {
+        collection: () => {
+          throw new Error('Invalid production configuration: Missing default credentials or FIREBASE_PROJECT_ID');
+        },
+        runTransaction: async () => {
+          throw new Error('Invalid production configuration: Missing default credentials or FIREBASE_PROJECT_ID');
+        },
+      };
+
+      const fallbackMem = new MemoryFirestoreAdapter();
+      const adapterE = new AdminFirestoreAdapter(fallbackMem, invalidConfigDb);
+
+      let docFailed = false;
+      try {
+        await adapterE.collection('users').doc('prod_user').set({ name: 'Insecure Silent Write' });
+      } catch (err: any) {
+        docFailed = true;
+        console.assert(
+          err.message.includes('Invalid production configuration'),
+          'TESTE E: Erro original de configuração deve ser propagado'
+        );
+      }
+      console.assert(docFailed === true, 'TESTE E: Gravação não pode fingir sucesso em produção com config inválida');
+
+      // Confirma que nenhum dado foi gravado silenciosamente no fallback em memória
+      const memorySnap = await fallbackMem.collection('users').doc('prod_user').get();
+      console.assert(memorySnap.exists === false, 'TESTE E: Fallback de memória não deve ser alimentado silenciosamente em produção');
+      console.log('✓ TESTE E: Configuração inválida do Firestore em produção -> erro controlado sem sucesso falso nem memória silenciosa');
+    }
+  } finally {
+    process.env = envSnapshot;
+  }
 
   // Verificação de conectividade real com Firestore Cloud
   console.log('--- VERIFICAÇÃO DE INTEGRAÇÃO COM FIRESTORE CLOUD REAL ---');

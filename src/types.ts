@@ -147,9 +147,13 @@ export interface FullBodyProgram {
   profile: UserProfile;
   methodology: 'FULL_BODY';
   splitDays: WorkoutDay[];
+  /** Target before exercise/session constraints are applied. */
+  targetWeeklyVolumeMap?: Record<MuscleGroup, number>;
+  /** Actual direct + weighted indirect volume produced by the plan. */
   weeklyVolumeMap: Record<MuscleGroup, number>;
   frequencyMap: Record<MuscleGroup, number>;
   prescriptionRationale: string[];
+  generationWarnings?: string[];
   aiAnalysis?: string;
 }
 

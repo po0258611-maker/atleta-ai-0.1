@@ -1,7 +1,71 @@
 import { useState, useEffect } from 'react';
 import { UserProfile, FullBodyProgram, WorkoutLog } from '../types';
-import { generateFullBodyWorkout } from '../engine/workoutEngine';
+import { generateWorkoutWithPipeline } from '../engine/workoutEngineBridge';
 import { FirestoreDataService } from '../services/firestoreDataService';
+import { validateWorkoutPrescription } from '../engine/workoutPrescriptionValidator';
+
+export interface HydrationResolution {
+  program: FullBodyProgram;
+  acceptedRemote: boolean;
+  validationErrors?: string[];
+}
+
+export function resolveActiveWorkoutHydration(
+  remoteProgram: unknown,
+  effectiveProfile: UserProfile,
+  workoutLogs: WorkoutLog[],
+): HydrationResolution {
+  if (!remoteProgram) {
+    const initialProg = generateWorkoutWithPipeline(effectiveProfile, workoutLogs);
+    return {
+      program: initialProg,
+      acceptedRemote: false,
+    };
+  }
+
+  const validation = validateWorkoutPrescription(remoteProgram as FullBodyProgram);
+  if (!validation.valid) {
+    console.warn(
+      'Programa remoto descartado por violar critérios de segurança (Safety Validator):',
+      validation.errors,
+    );
+    const fallbackProg = generateWorkoutWithPipeline(effectiveProfile, workoutLogs);
+    return {
+      program: fallbackProg,
+      acceptedRemote: false,
+      validationErrors: validation.errors,
+    };
+  }
+
+  // Validação complementar contra limitações físicas ativas do perfil do usuário
+  if (effectiveProfile && Array.isArray(effectiveProfile.limitations) && effectiveProfile.limitations.length > 0) {
+    const remoteFullBody = remoteProgram as FullBodyProgram;
+    const validationAgainstEffective = validateWorkoutPrescription({
+      ...remoteFullBody,
+      profile: {
+        ...(remoteFullBody.profile || effectiveProfile),
+        limitations: effectiveProfile.limitations,
+      } as UserProfile,
+    });
+    if (!validationAgainstEffective.valid) {
+      console.warn(
+        'Programa remoto descartado por violar limitações ativas do perfil do usuário:',
+        validationAgainstEffective.errors,
+      );
+      const fallbackProg = generateWorkoutWithPipeline(effectiveProfile, workoutLogs);
+      return {
+        program: fallbackProg,
+        acceptedRemote: false,
+        validationErrors: validationAgainstEffective.errors,
+      };
+    }
+  }
+
+  return {
+    program: remoteProgram as FullBodyProgram,
+    acceptedRemote: true,
+  };
+}
 
 export const INITIAL_PROFILE: UserProfile = {
   name: 'Atleta Google',
@@ -24,7 +88,7 @@ export const INITIAL_PROFILE: UserProfile = {
 export function useWorkout(userId?: string) {
   const [userProfile, setUserProfile] = useState<UserProfile>(INITIAL_PROFILE);
   const [program, setProgram] = useState<FullBodyProgram>(() =>
-    generateFullBodyWorkout(INITIAL_PROFILE)
+    generateWorkoutWithPipeline(INITIAL_PROFILE)
   );
   const [activeDayId, setActiveDayId] = useState<'A' | 'B' | 'C' | 'D'>('A');
   const [workoutLogs, setWorkoutLogs] = useState<WorkoutLog[]>([]);
@@ -42,19 +106,20 @@ export function useWorkout(userId?: string) {
           setUserProfile(remoteProfile);
         }
 
-        // 2. Active Workout Program
-        const remoteProgram = await FirestoreDataService.getActiveWorkout(userId);
-        if (remoteProgram) {
-          setProgram(remoteProgram);
-        } else {
-          const initialProg = generateFullBodyWorkout(effectiveProfile);
-          setProgram(initialProg);
-          FirestoreDataService.saveActiveWorkout(userId, initialProg);
-        }
-
-        // 3. Workout Logs
+        // 2. Workout Logs
         const remoteLogs = await FirestoreDataService.getWorkoutLogs(userId);
         setWorkoutLogs(remoteLogs);
+
+        // 3. Active Workout Program (com barreira determinística do Safety Validator)
+        const remoteProgram = await FirestoreDataService.getActiveWorkout(userId);
+        const hydration = resolveActiveWorkoutHydration(remoteProgram, effectiveProfile, remoteLogs);
+
+        if (hydration.acceptedRemote) {
+          setProgram(remoteProgram);
+        } else {
+          setProgram(hydration.program);
+          FirestoreDataService.saveActiveWorkout(userId, hydration.program);
+        }
       } catch (err) {
         console.warn('Erro ao sincronizar dados de treino com Firestore:', err);
       }
@@ -68,7 +133,7 @@ export function useWorkout(userId?: string) {
     if (userId) {
       await FirestoreDataService.saveUserProfile(userId, updatedProfile);
     }
-    const newProgram = generateFullBodyWorkout(updatedProfile);
+    const newProgram = generateWorkoutWithPipeline(updatedProfile, workoutLogs);
     setProgram(newProgram);
     if (userId) {
       await FirestoreDataService.saveActiveWorkout(userId, newProgram);
@@ -76,7 +141,7 @@ export function useWorkout(userId?: string) {
   };
 
   const handleRegenerateProgram = async () => {
-    const newProgram = generateFullBodyWorkout(userProfile);
+    const newProgram = generateWorkoutWithPipeline(userProfile, workoutLogs);
     setProgram(newProgram);
     if (userId) {
       await FirestoreDataService.saveActiveWorkout(userId, newProgram);

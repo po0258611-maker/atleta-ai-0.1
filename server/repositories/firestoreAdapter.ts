@@ -9,23 +9,41 @@ export interface IFirestoreCollection<T = any> extends IFirestoreQuery<T> { doc(
 export interface IFirestoreTransaction { get(collectionName: string, docId: string): Promise<FirestoreDocumentSnapshot>; set(collectionName: string, docId: string, data: any, options?: { merge?: boolean }): Promise<void> | void; delete(collectionName: string, docId: string): Promise<void> | void; }
 export interface IFirestoreAdapter { collection(name: string): IFirestoreCollection; runTransaction<T>(updateFunction: (transaction: IFirestoreTransaction) => Promise<T>): Promise<T>; }
 
-const allowMemoryFallback = process.env.FIRESTORE_DISABLE_MEMORY_FALLBACK !== 'true';
-
-function isFirestoreUnavailableError(err: any): boolean {
+export function isFirestoreUnavailableError(err: any): boolean {
   if (!err) return false;
   const msg = (err.message || String(err)).toLowerCase();
   const code = err.code;
   return code === 5 || code === '5' || code === 7 || code === '7' || code === 14 || code === '14' ||
     msg.includes('permission_denied') || msg.includes('permission denied') || msg.includes('missing or insufficient permissions') ||
     msg.includes('insufficient permissions') || msg.includes('not found') || msg.includes('unavailable') || msg.includes('econnrefused') ||
-    msg.includes('could not reach') || msg.includes('default credentials') || msg.includes('could not load the default credentials');
+    msg.includes('could not reach') || msg.includes('default credentials') || msg.includes('could not load the default credentials') ||
+    msg.includes('invalid production configuration');
 }
 
-function canUseMemoryFallback(): boolean { return allowMemoryFallback; }
+export function canUseMemoryFallback(): boolean {
+  // Se explicitamente desabilitado por FIRESTORE_DISABLE_MEMORY_FALLBACK, nunca permite
+  if (process.env.FIRESTORE_DISABLE_MEMORY_FALLBACK === 'true') {
+    return false;
+  }
+
+  // Em produção (NODE_ENV === 'production'):
+  // Política obrigatória fail-closed: fallback em memória permanece estritamente DESABILITADO.
+  if (process.env.NODE_ENV === 'production') {
+    return false;
+  }
+
+  // Em ambientes de teste e desenvolvimento (não-produção):
+  // Fallback em memória é permitido apenas quando explicitamente habilitado via opt-in:
+  return process.env.FIRESTORE_ALLOW_MEMORY_FALLBACK === 'true';
+}
 
 export class AdminFirestoreAdapter implements IFirestoreAdapter {
   private memoryFallback: MemoryFirestoreAdapter;
-  constructor(memoryFallback?: MemoryFirestoreAdapter) { this.memoryFallback = memoryFallback || new MemoryFirestoreAdapter(); }
+  private dbInstance?: any;
+  constructor(memoryFallback?: MemoryFirestoreAdapter, dbInstance?: any) {
+    this.memoryFallback = memoryFallback || new MemoryFirestoreAdapter();
+    this.dbInstance = dbInstance;
+  }
 
   private fallbackOrThrow<T>(fallbackFactory: () => Promise<T>, error: unknown): Promise<T> {
     if (canUseMemoryFallback() && isFirestoreUnavailableError(error)) {
@@ -39,8 +57,13 @@ export class AdminFirestoreAdapter implements IFirestoreAdapter {
     const fallbackCol = this.memoryFallback.collection(name);
     let db: any;
     let colRef: any;
-    try { db = getAdminFirestore(); colRef = db.collection(name); }
-    catch (error) { if (canUseMemoryFallback() && isFirestoreUnavailableError(error)) return fallbackCol; throw error; }
+    try {
+      db = this.dbInstance || getAdminFirestore();
+      colRef = db.collection(name);
+    } catch (error) {
+      if (canUseMemoryFallback() && isFirestoreUnavailableError(error)) return fallbackCol;
+      throw error;
+    }
 
     return {
       doc: (id: string) => {
@@ -65,8 +88,12 @@ export class AdminFirestoreAdapter implements IFirestoreAdapter {
 
   async runTransaction<T>(updateFunction: (transaction: IFirestoreTransaction) => Promise<T>): Promise<T> {
     let db: any;
-    try { db = getAdminFirestore(); }
-    catch (error) { if (canUseMemoryFallback() && isFirestoreUnavailableError(error)) return this.memoryFallback.runTransaction(updateFunction); throw error; }
+    try {
+      db = this.dbInstance || getAdminFirestore();
+    } catch (error) {
+      if (canUseMemoryFallback() && isFirestoreUnavailableError(error)) return this.memoryFallback.runTransaction(updateFunction);
+      throw error;
+    }
     try {
       return await db.runTransaction(async (adminTx: any) => {
         const tx: IFirestoreTransaction = {
@@ -84,7 +111,7 @@ export class AdminFirestoreAdapter implements IFirestoreAdapter {
 }
 
 function createAdminQuery(queryRef: any, fallbackQueryGetter?: () => IFirestoreQuery): IFirestoreQuery {
-  if (!queryRef) { if (fallbackQueryGetter) return fallbackQueryGetter(); throw new Error('FIRESTORE_QUERY_REFERENCE_UNAVAILABLE'); }
+  if (!queryRef) { if (fallbackQueryGetter && canUseMemoryFallback()) return fallbackQueryGetter(); throw new Error('FIRESTORE_QUERY_REFERENCE_UNAVAILABLE'); }
   return {
     where: (field, op, value) => createAdminQuery(queryRef.where(field, op, value), fallbackQueryGetter ? () => fallbackQueryGetter().where(field, op, value) : undefined),
     limit: (count) => createAdminQuery(queryRef.limit(count), fallbackQueryGetter ? () => fallbackQueryGetter().limit(count) : undefined),

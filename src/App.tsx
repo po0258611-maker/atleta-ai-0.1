@@ -9,7 +9,7 @@ import { FirestoreDataService } from './services/firestoreDataService';
 import { useAuth } from './hooks/useAuth';
 import { useNavigation } from './hooks/useNavigation';
 import { useSubscription } from './hooks/useSubscription';
-import { useWorkout } from './hooks/useWorkout';
+import { useWorkout, resolveActiveWorkoutHydration } from './hooks/useWorkout';
 import { 
   Dumbbell, 
   Sparkles, 
@@ -113,24 +113,33 @@ export default function App() {
 
   // Restore and test fixtures handlers
   const handleRestoreDatabaseBackup = async (payload: DatabaseBackupPayload) => {
+    let effectiveProfile = userProfile;
     if (payload.data.profile) {
+      effectiveProfile = payload.data.profile;
       setUserProfile(payload.data.profile);
       if (currentUser?.id) {
         await FirestoreDataService.saveUserProfile(currentUser.id, payload.data.profile);
       }
     }
-    if (payload.data.workoutProgram) {
-      setProgram(payload.data.workoutProgram);
-      if (currentUser?.id) {
-        await FirestoreDataService.saveActiveWorkout(currentUser.id, payload.data.workoutProgram);
-      }
-    }
+    let effectiveLogs = workoutLogs;
     if (Array.isArray(payload.data.workoutLogs) && payload.data.workoutLogs.length > 0) {
+      effectiveLogs = payload.data.workoutLogs;
       setWorkoutLogs(payload.data.workoutLogs);
       if (currentUser?.id) {
         for (const log of payload.data.workoutLogs) {
           await FirestoreDataService.saveWorkoutLog(currentUser.id, log);
         }
+      }
+    }
+    if (payload.data.workoutProgram) {
+      const hydration = resolveActiveWorkoutHydration(
+        payload.data.workoutProgram,
+        effectiveProfile,
+        effectiveLogs
+      );
+      setProgram(hydration.program);
+      if (currentUser?.id) {
+        await FirestoreDataService.saveActiveWorkout(currentUser.id, hydration.program);
       }
     }
   };
