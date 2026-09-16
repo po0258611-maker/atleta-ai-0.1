@@ -12,9 +12,6 @@ const corsOrigins = (process.env.CORS_ORIGINS ? process.env.CORS_ORIGINS.split('
   .filter(Boolean);
 
 const paymentMode = process.env.PAYMENT_MODE?.trim() === 'live' ? 'live' : 'mock';
-if (!isProduction && process.env.FIRESTORE_ALLOW_MEMORY_FALLBACK === undefined) {
-  process.env.FIRESTORE_ALLOW_MEMORY_FALLBACK = 'true';
-}
 const configuredPort = Number(process.env.PORT);
 const port = Number.isInteger(configuredPort) && configuredPort > 0 && configuredPort <= 65535 ? configuredPort : 3000;
 
@@ -71,7 +68,5 @@ export function validateProductionConfig(): void {
 
   const missing = Object.entries(required).filter(([, value]) => !value).map(([key]) => key);
   if (missing.length > 0) throw new Error(`Invalid production configuration. Missing: ${missing.join(', ')}`);
-  if (SERVER_CONFIG.PAYMENT_MODE !== 'live') {
-    console.warn('[SERVER_CONFIG] PAYMENT_MODE is not live in production. Operating with mock payments.');
-  }
+  if (SERVER_CONFIG.PAYMENT_MODE !== 'live') throw new Error('PAYMENT_MODE must be "live" in production. Mock payment mode is forbidden.');
 }
