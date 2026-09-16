@@ -12,8 +12,8 @@ const corsOrigins = (process.env.CORS_ORIGINS ? process.env.CORS_ORIGINS.split('
   .filter(Boolean);
 
 const paymentMode = process.env.PAYMENT_MODE?.trim() === 'live' ? 'live' : 'mock';
-const configuredPort = Number(process.env.PORT);
-const port = Number.isInteger(configuredPort) && configuredPort > 0 && configuredPort <= 65535 ? configuredPort : 3000;
+// Port 3000 is required by the infrastructure proxy; never read process.env.PORT
+const port = 3000;
 
 function resolveFirebaseProjectId(): string {
   try {
